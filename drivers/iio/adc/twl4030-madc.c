@@ -167,6 +167,7 @@ struct twl4030_madc_data {
 	struct regulator *usb3v1;
 	struct twl4030_madc_request requests[TWL4030_MADC_NUM_METHODS];
 	bool use_second_irq;
+	bool latona_als_sw2;
 	u8 imr;
 	u8 isr;
 };
@@ -182,6 +183,9 @@ static int twl4030_madc_read(struct iio_dev *iio_dev,
 	int ret;
 
 	req.method = madc->use_second_irq ? TWL4030_MADC_SW2 : TWL4030_MADC_SW1;
+	/* Diagnostic: vendor Latona ALS uses SW2; leave IRQ routing unchanged. */
+	if (madc->latona_als_sw2 && chan->channel == 4)
+		req.method = TWL4030_MADC_SW2;
 
 	req.channels = BIT(chan->channel);
 	req.active = false;
@@ -782,6 +786,11 @@ static int twl4030_madc_probe(struct platform_device *pdev)
 	else
 		madc->use_second_irq = device_property_read_bool(dev,
 				       "ti,system-uses-second-madc-irq");
+
+	madc->latona_als_sw2 = device_property_read_bool(dev,
+				"samsung,latona-als-use-sw2");
+	if (madc->latona_als_sw2)
+		dev_info(dev, "Latona ALS SW2 diagnostic enabled; IRQ routing unchanged\n");
 
 	madc->imr = madc->use_second_irq ? TWL4030_MADC_IMR2 :
 					   TWL4030_MADC_IMR1;

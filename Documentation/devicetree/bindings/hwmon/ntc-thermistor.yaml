@@ -92,6 +92,15 @@ properties:
     description: Thermal sensor cells if used for thermal sensoring.
     const: 0
 
+  enable-gpios:
+    maxItems: 1
+    description: Optional active-high sensor rail enable, asserted only for sampling.
+
+  startup-delay-us:
+    description: Settling delay after enabling the sensor rail before a sample.
+    minimum: 0
+    maximum: 100000
+
   pullup-uv:
     $ref: /schemas/types.yaml#/definitions/uint32
     description: Pull-up voltage in micro volts. Must always be specified.

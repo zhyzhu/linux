@@ -17,6 +17,9 @@ properties:
   compatible:
     const: ti,twl4030-madc
 
+  vusb3v1-supply:
+    description: 3.1V bias supply used by the MADC inputs.
+
   interrupts:
     maxItems: 1
 

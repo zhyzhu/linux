@@ -249,4 +249,10 @@ config YAMAHA_YAS530
 	  To compile this driver as a module, choose M here: the module
 	  will be called yamaha-yas.
 
+config YAMAHA_YAS529_LATONA
+	tristate "Yamaha YAS529 one-shot Latona support"
+	depends on I2C
+	help
+	  YAS529-specific protocol and factory-compensated sensor axes.
+
 endmenu

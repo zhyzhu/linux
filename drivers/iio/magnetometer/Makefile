@@ -33,3 +33,4 @@ obj-$(CONFIG_SENSORS_RM3100_SPI)	+= rm3100-spi.o
 obj-$(CONFIG_TI_TMAG5273)		+= tmag5273.o
 
 obj-$(CONFIG_YAMAHA_YAS530)		+= yamaha-yas530.o
+obj-$(CONFIG_YAMAHA_YAS529_LATONA) += yas529-latona.o

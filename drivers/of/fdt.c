@@ -111,7 +111,10 @@ static void populate_properties(const void *blob,
 
 		val = fdt_getprop_by_offset(blob, cur, &pname, &sz);
 		if (!val) {
-			pr_warn("Cannot locate property at 0x%x\n", cur);
+                        const __be32 *diag = fdt_offset_ptr(blob, cur, 12);
+                        pr_warn("Cannot locate property at 0x%x error=%d\n", cur, (int)sz);
+                        if (diag)
+                                pr_warn("LATONA bad property words=%08x %08x %08x\n", be32_to_cpu(diag[0]), be32_to_cpu(diag[1]), be32_to_cpu(diag[2]));
 			continue;
 		}
 
@@ -372,13 +375,18 @@ void *__unflatten_device_tree(const void *blob,
 	pr_debug("size: %08x\n", fdt_totalsize(blob));
 	pr_debug("version: %08x\n", fdt_version(blob));
 
-	if (fdt_check_header(blob)) {
+	ret = fdt_check_header(blob);
+	pr_info("LATONA FDT blob=%px header_ret=%d\n", blob, ret);
+	if (ret) {
 		pr_err("Invalid device tree blob header\n");
 		return NULL;
 	}
 
+	pr_info("LATONA FDT size=%u scm_offset=%d\n", fdt_totalsize(blob), fdt_node_offset_by_compatible(blob, -1, "ti,omap3-scm"));
+
 	/* First pass, scan for size */
 	size = unflatten_dt_nodes(blob, NULL, dad, NULL);
+	pr_info("LATONA FDT dryrun bytes=%d\n", size);
 	if (size <= 0)
 		return NULL;
 
@@ -387,6 +395,7 @@ void *__unflatten_device_tree(const void *blob,
 
 	/* Allocate memory for the expanded device tree */
 	mem = dt_alloc(size + 4, __alignof__(struct device_node));
+	pr_info("LATONA FDT allocated=%px bytes=%d\n", mem, size + 4);
 	if (!mem)
 		return NULL;
 
@@ -398,6 +407,7 @@ void *__unflatten_device_tree(const void *blob,
 
 	/* Second pass, do actual unflattening */
 	ret = unflatten_dt_nodes(blob, mem, dad, mynodes);
+	pr_info("LATONA FDT populated bytes=%d root=%px\n", ret, mynodes ? *mynodes : NULL);
 
 	if (be32_to_cpup(mem + size) != 0xdeadbeef)
 		pr_warn("End of tree marker overwritten: %08x\n",
@@ -1210,6 +1220,8 @@ static void *__init copy_device_tree(void *fdt)
 void __init unflatten_device_tree(void)
 {
 	void *fdt = initial_boot_params;
+	if (fdt && !fdt_check_header(fdt))
+		pr_info("LATONA FDT CRC boot=%08x now=%08x\n", of_fdt_crc32, crc32_be(~0, fdt, fdt_totalsize(fdt)));
 
 	/* Save the statically-placed regions in the reserved_mem array */
 	fdt_scan_reserved_mem_reg_nodes();

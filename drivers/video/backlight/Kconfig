@@ -490,6 +490,12 @@ config BACKLIGHT_LED
 	  If you have a LCD backlight adjustable by LED class driver, say Y
 	  to enable this driver.
 
+config BACKLIGHT_LATONA_SONY
+	tristate "Latona Sony brightness-only SPI backlight"
+	depends on SPI && OF
+	help
+	  Brightness control only; preserves bootloader panel initialization.
+
 endif # BACKLIGHT_CLASS_DEVICE
 
 endmenu

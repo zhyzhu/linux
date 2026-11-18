@@ -13,6 +13,11 @@
 #include "modpost.h"
 #include "devicetable-offsets.h"
 
+/* Darwin sys/types.h already owns uuid_t; keep kernel device-table layout. */
+#ifdef __APPLE__
+#define uuid_t kernel_uuid_t
+#endif
+
 /* We use the ELF typedefs for kernel_ulong_t but bite the bullet and
  * use either stdint.h or inttypes.h for the rest. */
 #if KERNEL_ELFCLASS == ELFCLASS32

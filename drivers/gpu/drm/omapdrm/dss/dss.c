@@ -1236,6 +1236,12 @@ static int dss_video_pll_probe(struct dss_device *dss)
 	if (!np)
 		return 0;
 
+	/* OMAP3 has no separate video PLL register resources to supply. */
+	if (of_property_match_string(np, "reg-names", "pll1") < 0 &&
+	    of_property_match_string(np, "reg-names", "pll2") < 0)
+		return 0;
+
+
 	if (of_property_read_bool(np, "syscon-pll-ctrl")) {
 		dss->syscon_pll_ctrl = syscon_regmap_lookup_by_phandle(np,
 			"syscon-pll-ctrl");
@@ -1315,9 +1321,15 @@ static int dss_bind(struct device *dev)
 	struct dss_pdata pdata;
 	int r;
 
-	r = component_bind_all(dev, NULL);
+	/* Keep the parent active while child components probe their registers. */
+	r = dss_runtime_get(dss);
 	if (r)
 		return r;
+	r = component_bind_all(dev, NULL);
+	if (r) {
+		dss_runtime_put(dss);
+		return r;
+	}
 
 	pm_set_vt_switch(0);
 
@@ -1326,10 +1338,13 @@ static int dss_bind(struct device *dev)
 						 &pdata, sizeof(pdata));
 	if (IS_ERR(drm_pdev)) {
 		component_unbind_all(dev, NULL);
+		dss_runtime_put(dss);
 		return PTR_ERR(drm_pdev);
 	}
 
 	dss->drm_pdev = drm_pdev;
+	dev_info(dev, "DSS components bound with parent runtime active\n");
+	dss_runtime_put(dss);
 
 	return 0;
 }
@@ -1489,10 +1504,16 @@ static int dss_probe(struct platform_device *pdev)
 	dss->debugfs.dss = dss_debugfs_create_file(dss, "dss", dss_dump_regs,
 						   dss);
 
-	/* Add all the child devices as components. */
-	r = of_platform_populate(pdev->dev.of_node, NULL, NULL, &pdev->dev);
+	/* Legacy OMAP no-idle children may be marked active during creation. */
+	r = dss_runtime_get(dss);
 	if (r)
 		goto err_uninit_debugfs;
+	/* Add all the child devices as components. */
+	r = of_platform_populate(pdev->dev.of_node, NULL, NULL, &pdev->dev);
+	dss_runtime_put(dss);
+	if (r)
+		goto err_uninit_debugfs;
+	dev_info(&pdev->dev, "DSS child creation completed with parent runtime active\n");
 
 	omapdss_gather_components(&pdev->dev);
 

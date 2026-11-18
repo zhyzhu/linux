@@ -20,6 +20,58 @@
  AR_CLASS(	.arch	armv7-a	)
  M_CLASS(	.arch	armv7-m	)
 
+
+/* Latona diagnostic only: scratch r0-r3,r5-r6, no stack at entry.
+ * Use only the exact SBL 480x800 XRGB8888 buffer at 0x9fd80000.
+ * Never program display registers or touch persistent storage.
+ */
+#if defined(CONFIG_ARCH_OMAP3) && !defined(CONFIG_THUMB2_KERNEL)
+.macro latona_checkpoint stage=0
+        .exitm  @ retired Latona colour checkpoint; no pixels or busy wait
+        ldr r0, =0x48050400
+        ldr r1, [r0, #0x40]   @ DISPC_CONTROL: LCD enabled
+        tst r1, #1
+        beq .Llatona_done\@
+        ldr r1, [r0, #0xa0]   @ GFX_ATTRIBUTES
+        tst r1, #1
+        beq .Llatona_done\@
+        ubfx r2, r1, #1, #4
+        cmp r2, #8           @ SBL XRGB8888
+        bne .Llatona_done\@
+        ldr r1, [r0, #0x8c]   @ SBL 480 x 800
+        ldr r2, =0x031f01df
+        cmp r1, r2
+        bne .Llatona_done\@
+        ldr r2, [r0, #0x80]
+        ldr r1, =0x9fd80000
+        cmp r2, r1
+        bne .Llatona_done\@
+        mvn r3, #0
+.if \stage == 1
+        bic r3, r3, #0xff
+.elseif \stage == 2
+        bic r3, r3, #0xff
+        bic r3, r3, #0xff0000
+.endif
+        mov r5, #15360       @ 480 * 32 * 4 bytes, visible 32-line stripe
+.Llatona_write\@:
+        str r3, [r2]
+        mcr p15, 0, r2, c7, c10, 1 @ clean D-cache line for scanout
+        add r2, r2, #4
+        subs r5, r5, #1
+        bne .Llatona_write\@
+        dsb sy
+        mov r6, #0x20000000
+.Llatona_wait\@:
+        subs r6, r6, #1
+        bne .Llatona_wait\@
+.Llatona_done\@:
+        b .Llatona_pool_end\@
+        .ltorg
+.Llatona_pool_end\@:
+.endm
+#endif
+
 /*
  * Debugging stuff
  *
@@ -228,6 +280,9 @@ start:
 #endif
 		mov	r7, r1			@ save architecture ID
 		mov	r8, r2			@ save atags pointer
+#if defined(CONFIG_ARCH_OMAP3) && !defined(CONFIG_THUMB2_KERNEL)
+		latona_checkpoint 0
+#endif
 
 #ifndef CONFIG_CPU_V7M
 		/*
@@ -443,6 +498,12 @@ restart:	adr	r0, LC1
 		add	r6, r6, r5
 		add	r10, r10, r5
 		add	sp, sp, r5
+latona_dtb_stack_safe:
+#if defined(CONFIG_ARCH_OMAP3) && !defined(CONFIG_THUMB2_KERNEL)
+		stmdb sp!, {r0-r3, r5-r6}
+		latona_checkpoint 1
+		ldmia sp!, {r0-r3, r5-r6}
+#endif
 dtb_check_done:
 #endif
 
@@ -639,6 +700,9 @@ not_relocated:	mov	r0, #0
 		add	r1, r1, r0		@ end of inflated image
 		bl	cache_clean_flush
 		bl	cache_off
+#if defined(CONFIG_ARCH_OMAP3) && !defined(CONFIG_THUMB2_KERNEL)
+		latona_checkpoint 2
+#endif
 
 #ifdef CONFIG_ARM_VIRT_EXT
 		mrs	r0, spsr		@ Get saved CPU boot mode

@@ -17,6 +17,9 @@ struct mmc_request;
 
 #define MMC_CMD_RETRIES        3
 
+/* Temporary, board-scoped SDIO initialization diagnostic. */
+u32 mmc_latona_sdio_query_ocr(struct mmc_host *host);
+
 struct mmc_bus_ops {
 	void (*remove)(struct mmc_host *);
 	void (*detect)(struct mmc_host *);

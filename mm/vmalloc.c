@@ -3950,6 +3950,8 @@ fail:
 
 	return NULL;
 }
+/* SGX DDK needs explicit noncached page protection for device allocations. */
+EXPORT_SYMBOL_GPL(__vmalloc_node_range_noprof);
 
 /**
  * __vmalloc_node - allocate virtually contiguous memory

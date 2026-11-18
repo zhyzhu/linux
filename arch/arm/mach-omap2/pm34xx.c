@@ -302,7 +302,7 @@ static void omap3_pm_idle(void)
 	if (omap_irq_pending())
 		return;
 
-	omap3_do_wfi();
+	omap3_do_wfi_idle();
 }
 
 #ifdef CONFIG_SUSPEND

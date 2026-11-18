@@ -1,0 +1,41 @@
+// SPDX-License-Identifier: GPL-2.0-only
+/* Candidate: same verified kernel, enable internal MMC2 only.
+ * Reference: Latona board mmc[0], VMMC2 fixed1.85V, SDMMC2 mode0.
+ * Boot remains rescue-only; no automatic filesystem mount or format.
+ */
+#include "omap3-samsung-latona.dts"
+
+&omap3_pmx_core {
+    latona_mmc2_pins: latona-mmc2-pins {
+        pinctrl-single,pins = <
+            OMAP3_CORE1_IOPAD(0x2158, PIN_INPUT_PULLUP | MUX_MODE0)
+            OMAP3_CORE1_IOPAD(0x215a, PIN_INPUT_PULLUP | MUX_MODE0)
+            OMAP3_CORE1_IOPAD(0x215c, PIN_INPUT_PULLUP | MUX_MODE0)
+            OMAP3_CORE1_IOPAD(0x215e, PIN_INPUT_PULLUP | MUX_MODE0)
+            OMAP3_CORE1_IOPAD(0x2160, PIN_INPUT_PULLUP | MUX_MODE0)
+            OMAP3_CORE1_IOPAD(0x2162, PIN_INPUT_PULLUP | MUX_MODE0)
+            OMAP3_CORE1_IOPAD(0x2164, PIN_INPUT_PULLUP | MUX_MODE0)
+            OMAP3_CORE1_IOPAD(0x2166, PIN_INPUT_PULLUP | MUX_MODE0)
+            OMAP3_CORE1_IOPAD(0x2168, PIN_INPUT_PULLUP | MUX_MODE0)
+            OMAP3_CORE1_IOPAD(0x216a, PIN_INPUT_PULLUP | MUX_MODE0)
+        >;
+    };
+};
+
+&vmmc2 {
+    regulator-min-microvolt = <1850000>;
+    regulator-max-microvolt = <1850000>;
+};
+
+&mmc2 {
+    status = "okay";
+    pinctrl-names = "default";
+    pinctrl-0 = <&latona_mmc2_pins>;
+    vmmc-supply = <&vmmc2>;
+    bus-width = <8>;
+    max-frequency = <24000000>;
+    non-removable;
+    disable-wp;
+    no-sd;
+    no-sdio;
+};

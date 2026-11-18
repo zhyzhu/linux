@@ -53,6 +53,71 @@
 
 static const unsigned freqs[] = { 400000, 300000, 200000, 100000 };
 
+/* Temporary diagnostic: only Latona's wireless MMC3 may skip this reset.
+ * Default is the standard sequence. Root may change it before host rebind.
+ */
+static bool latona_skip_init_sdio_reset;
+module_param(latona_skip_init_sdio_reset, bool, 0600);
+MODULE_PARM_DESC(latona_skip_init_sdio_reset,
+		 "Latona MMC3 diagnostic: skip pre-CMD0 SDIO reset (default false)");
+
+
+static unsigned int latona_sdio_init_hz;
+static unsigned int latona_sdio_probe_ocr;
+
+static bool mmc_latona_wireless_host(struct mmc_host *host)
+{
+	return of_machine_is_compatible("samsung,latona") && mmc_dev(host) &&
+	       !strcmp(dev_name(mmc_dev(host)), "480ad000.mmc");
+}
+
+static int latona_init_hz_set(const char *val, const struct kernel_param *kp)
+{
+	unsigned int n;
+	int ret = kstrtouint(val, 0, &n);
+
+	if (ret)
+		return ret;
+	if (n != 0 && n != 400000 && n != 12000000 && n != 24000000)
+		return -EINVAL;
+	WRITE_ONCE(*(unsigned int *)kp->arg, n);
+	return 0;
+}
+
+static int latona_probe_ocr_set(const char *val, const struct kernel_param *kp)
+{
+	unsigned int n;
+	int ret = kstrtouint(val, 0, &n);
+
+	if (ret)
+		return ret;
+	if (n != 0 && n != 0x80 && n != 0x00ffffc0)
+		return -EINVAL;
+	WRITE_ONCE(*(unsigned int *)kp->arg, n);
+	return 0;
+}
+
+static const struct kernel_param_ops latona_init_hz_ops = {
+	.set = latona_init_hz_set, .get = param_get_uint,
+};
+static const struct kernel_param_ops latona_probe_ocr_ops = {
+	.set = latona_probe_ocr_set, .get = param_get_uint,
+};
+module_param_cb(latona_sdio_init_hz, &latona_init_hz_ops,
+		&latona_sdio_init_hz, 0600);
+module_param_cb(latona_sdio_probe_ocr, &latona_probe_ocr_ops,
+		&latona_sdio_probe_ocr, 0600);
+MODULE_PARM_DESC(latona_sdio_init_hz,
+		 "Latona MMC3 diagnostic init Hz: 0=standard, 400000,12000000,24000000");
+MODULE_PARM_DESC(latona_sdio_probe_ocr,
+		 "Latona MMC3 diagnostic CMD5 query argument: 0=standard,0x80,0xffffc0");
+
+u32 mmc_latona_sdio_query_ocr(struct mmc_host *host)
+{
+	return mmc_latona_wireless_host(host) ? READ_ONCE(latona_sdio_probe_ocr) : 0;
+}
+
+
 /*
  * Enabling software CRCs on the data blocks can be a significant (30%)
  * performance cost, and for other reasons may not always be desired.
@@ -2053,12 +2118,19 @@ EXPORT_SYMBOL(mmc_sw_reset);
 
 static int mmc_rescan_try_freq(struct mmc_host *host, unsigned freq)
 {
+	if (mmc_latona_wireless_host(host) && READ_ONCE(latona_sdio_init_hz)) {
+		freq = min(READ_ONCE(latona_sdio_init_hz), host->f_max);
+		dev_info(mmc_dev(host), "LATONA diagnostic init frequency=%u Hz\n", freq);
+	}
 	host->f_init = freq;
 
 	pr_debug("%s: %s: trying to init card at %u Hz\n",
 		mmc_hostname(host), __func__, host->f_init);
 
 	mmc_power_up(host, host->ocr_avail);
+	/* mmc_start_host may already have powered up at the standard rate. */
+	if (mmc_latona_wireless_host(host) && READ_ONCE(latona_sdio_init_hz))
+		mmc_set_clock(host, host->f_init);
 
 	/*
 	 * Some eMMCs (with VCCQ always on) may not be reset after power up, so
@@ -2072,8 +2144,16 @@ static int mmc_rescan_try_freq(struct mmc_host *host, unsigned freq)
 	 * should be ignored by SD/eMMC cards.
 	 * Skip it if we already know that we do not support SDIO commands
 	 */
-	if (!(host->caps2 & MMC_CAP2_NO_SDIO))
-		sdio_reset(host);
+	if (!(host->caps2 & MMC_CAP2_NO_SDIO)) {
+		if (latona_skip_init_sdio_reset &&
+		    of_machine_is_compatible("samsung,latona") &&
+		    mmc_dev(host) &&
+		    !strcmp(dev_name(mmc_dev(host)), "480ad000.mmc"))
+			dev_info(mmc_dev(host),
+				 "LATONA init CMD52 reset skipped by diagnostic switch\n");
+		else
+			sdio_reset(host);
+	}
 
 	mmc_go_idle(host);
 

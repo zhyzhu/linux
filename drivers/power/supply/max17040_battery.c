@@ -151,6 +151,7 @@ struct max17040_chip {
 	u32 low_soc_alert;
 	/* some devices return twice the capacity */
 	bool quirk_double_soc;
+	bool read_only;
 	/* higher 8 bits for 17043+, 16 bits for 17040,41 */
 	u16 rcomp;
 };
@@ -444,6 +445,12 @@ static int max17040_get_property(struct power_supply *psy,
 	return 0;
 }
 
+/* Preserve an already initialized gauge: enforce no register writes. */
+static bool max17040_no_write(struct device *dev, unsigned int reg)
+{
+	return false;
+}
+
 static const struct regmap_config max17040_regmap = {
 	.reg_bits	= 8,
 	.reg_stride	= 2,
@@ -471,10 +478,25 @@ static const struct power_supply_desc max17040_battery_desc = {
 	.num_properties		= ARRAY_SIZE(max17040_battery_props),
 };
 
+static enum power_supply_property max17040_observation_props[] = {
+	POWER_SUPPLY_PROP_VOLTAGE_NOW,
+	POWER_SUPPLY_PROP_CAPACITY,
+	POWER_SUPPLY_PROP_STATUS,
+};
+
+static const struct power_supply_desc max17040_observation_desc = {
+	.name = "battery",
+	.type = POWER_SUPPLY_TYPE_BATTERY,
+	.get_property = max17040_get_property,
+	.properties = max17040_observation_props,
+	.num_properties = ARRAY_SIZE(max17040_observation_props),
+};
+
 static int max17040_probe(struct i2c_client *client)
 {
 	const struct i2c_device_id *id = i2c_client_get_device_id(client);
 	struct power_supply_config psy_cfg = {};
+	struct regmap_config map_config = max17040_regmap;
 	struct max17040_chip *chip;
 	enum chip_id chip_id;
 	bool enable_irq = false;
@@ -485,7 +507,10 @@ static int max17040_probe(struct i2c_client *client)
 		return -ENOMEM;
 
 	chip->client = client;
-	chip->regmap = devm_regmap_init_i2c(client, &max17040_regmap);
+	chip->read_only = device_property_read_bool(&client->dev, "maxim,read-only");
+	if (chip->read_only)
+		map_config.writeable_reg = max17040_no_write;
+	chip->regmap = devm_regmap_init_i2c(client, &map_config);
 	if (IS_ERR(chip->regmap))
 		return PTR_ERR(chip->regmap);
 	chip_id = (enum chip_id) id->driver_data;
@@ -512,6 +537,7 @@ static int max17040_probe(struct i2c_client *client)
 	}
 
 	chip->battery = devm_power_supply_register(&client->dev,
+				chip->read_only ? &max17040_observation_desc :
 				&max17040_battery_desc, &psy_cfg);
 	if (IS_ERR(chip->battery)) {
 		dev_err(&client->dev, "failed: power supply register\n");
@@ -522,6 +548,17 @@ static int max17040_probe(struct i2c_client *client)
 	if (ret < 0)
 		return ret;
 	dev_dbg(&chip->client->dev, "MAX17040 Fuel-Gauge Ver 0x%x\n", ret);
+
+	if (chip->read_only) {
+		INIT_DEFERRABLE_WORK(&chip->work, max17040_work);
+		ret = devm_add_action(&client->dev, max17040_stop_work, chip);
+		if (ret)
+			return ret;
+		max17040_queue_work(chip);
+		dev_info(&client->dev, "read-only observation, version 0x%x; gauge state preserved\n",
+			 max17040_get_version(chip));
+		return 0;
+	}
 
 	if (chip_id == ID_MAX17040 || chip_id == ID_MAX17041)
 		max17040_reset(chip);
@@ -576,6 +613,11 @@ static int max17040_suspend(struct device *dev)
 	struct i2c_client *client = to_i2c_client(dev);
 	struct max17040_chip *chip = i2c_get_clientdata(client);
 
+	if (chip->read_only) {
+		cancel_delayed_work_sync(&chip->work);
+		return 0;
+	}
+
 	if (client->irq && chip->data.has_soc_alert)
 		// disable soc alert to prevent wakeup
 		max17040_set_soc_alert(chip, 0);
@@ -592,6 +634,11 @@ static int max17040_resume(struct device *dev)
 {
 	struct i2c_client *client = to_i2c_client(dev);
 	struct max17040_chip *chip = i2c_get_clientdata(client);
+
+	if (chip->read_only) {
+		max17040_queue_work(chip);
+		return 0;
+	}
 
 	if (client->irq && device_may_wakeup(dev))
 		disable_irq_wake(client->irq);

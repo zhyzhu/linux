@@ -345,6 +345,40 @@ static void twl4030_usb_set_mode(struct twl4030_usb *twl, int mode)
 	}
 }
 
+/* Read-only snapshot on failure; no new control/register writes. */
+static int twl4030_diag_pm_read(u8 module, u8 reg)
+{
+	u8 value;
+	int ret = twl_i2c_read_u8(module, &value, reg);
+	return ret < 0 ? ret : value;
+}
+
+static void twl4030_usb_clock_snapshot(struct twl4030_usb *twl)
+{
+	static const u8 bases[] = { VUSB3V1_DEV_GRP, VUSB1V8_DEV_GRP,
+				  VUSB1V5_DEV_GRP };
+	static const char * const names[] = { "3v1", "1v8", "1v5" };
+	int i;
+
+	dev_err(twl->dev, "USB DIAG CFG_BOOT=%02x PHY_PWR=%02x CLK_CTRL=%02x CLK_STS=%02x\n",
+		twl4030_diag_pm_read(TWL_MODULE_PM_MASTER, 0x05),
+		twl4030_usb_read(twl, PHY_PWR_CTRL),
+		twl4030_usb_read(twl, PHY_CLK_CTRL),
+		twl4030_usb_read(twl, PHY_CLK_CTRL_STS));
+	dev_err(twl->dev, "USB DIAG DEDICATED1=%02x DEDICATED2=%02x enabled=%d/%d/%d\n",
+		twl4030_diag_pm_read(TWL_MODULE_PM_RECEIVER, VUSB_DEDICATED1),
+		twl4030_diag_pm_read(TWL_MODULE_PM_RECEIVER, VUSB_DEDICATED2),
+		regulator_is_enabled(twl->usb3v1),
+		regulator_is_enabled(twl->usb1v8),
+		regulator_is_enabled(twl->usb1v5));
+	for (i = 0; i < ARRAY_SIZE(bases); i++)
+		dev_err(twl->dev, "USB DIAG %s GRP/TYPE/REMAP=%02x/%02x/%02x\n",
+			names[i],
+			twl4030_diag_pm_read(TWL_MODULE_PM_RECEIVER, bases[i]),
+			twl4030_diag_pm_read(TWL_MODULE_PM_RECEIVER, bases[i] + 1),
+			twl4030_diag_pm_read(TWL_MODULE_PM_RECEIVER, bases[i] + 2));
+}
+
 static void twl4030_i2c_access(struct twl4030_usb *twl, int on)
 {
 	unsigned long timeout;
@@ -363,9 +397,11 @@ static void twl4030_i2c_access(struct twl4030_usb *twl, int on)
 				&& time_before(jiffies, timeout))
 					udelay(10);
 			if (!(twl4030_usb_read(twl, PHY_CLK_CTRL_STS) &
-							PHY_DPLL_CLK))
+							PHY_DPLL_CLK)) {
 				dev_err(twl->dev, "Timeout setting T2 HSUSB "
 						"PHY DPLL clock\n");
+				twl4030_usb_clock_snapshot(twl);
+			}
 		} else {
 			/* let ULPI control the DPLL clock */
 			val &= ~REQ_PHY_DPLL_CLK;
@@ -513,6 +549,7 @@ static int twl4030_phy_power_on(struct phy *phy)
 
 static int twl4030_usb_ldo_init(struct twl4030_usb *twl)
 {
+	int ret;
 	/* Enable writing to power configuration registers */
 	twl_i2c_write_u8(TWL_MODULE_PM_MASTER, TWL4030_PM_MASTER_KEY_CFG1,
 			 TWL4030_PM_MASTER_PROTECT_KEY);
@@ -526,12 +563,16 @@ static int twl4030_usb_ldo_init(struct twl4030_usb *twl)
 	/* input to VUSB3V1 LDO is from VBAT, not VBUS */
 	twl_i2c_write_u8(TWL_MODULE_PM_RECEIVER, 0x14, VUSB_DEDICATED1);
 
-	/* Initialize 3.1V regulator */
-	twl_i2c_write_u8(TWL_MODULE_PM_RECEIVER, 0, VUSB3V1_DEV_GRP);
+	/* VUSB3V1 is shared with MADC. Do not disable it behind the
+	 * regulator core's reference count; MADC may already own an enable.
+	 */
 
 	twl->usb3v1 = devm_regulator_get(twl->dev, "usb3v1");
-	if (IS_ERR(twl->usb3v1))
-		return -ENODEV;
+	if (IS_ERR(twl->usb3v1)) {
+		ret = PTR_ERR(twl->usb3v1);
+		dev_err(twl->dev, "LATONA USB LDO usb3v1 get error=%d\n", ret);
+		goto err_relock;
+	}
 
 	twl_i2c_write_u8(TWL_MODULE_PM_RECEIVER, 0, VUSB3V1_TYPE);
 
@@ -539,8 +580,11 @@ static int twl4030_usb_ldo_init(struct twl4030_usb *twl)
 	twl_i2c_write_u8(TWL_MODULE_PM_RECEIVER, 0, VUSB1V5_DEV_GRP);
 
 	twl->usb1v5 = devm_regulator_get(twl->dev, "usb1v5");
-	if (IS_ERR(twl->usb1v5))
-		return -ENODEV;
+	if (IS_ERR(twl->usb1v5)) {
+		ret = PTR_ERR(twl->usb1v5);
+		dev_err(twl->dev, "LATONA USB LDO usb1v5 get error=%d\n", ret);
+		goto err_relock;
+	}
 
 	twl_i2c_write_u8(TWL_MODULE_PM_RECEIVER, 0, VUSB1V5_TYPE);
 
@@ -548,8 +592,11 @@ static int twl4030_usb_ldo_init(struct twl4030_usb *twl)
 	twl_i2c_write_u8(TWL_MODULE_PM_RECEIVER, 0, VUSB1V8_DEV_GRP);
 
 	twl->usb1v8 = devm_regulator_get(twl->dev, "usb1v8");
-	if (IS_ERR(twl->usb1v8))
-		return -ENODEV;
+	if (IS_ERR(twl->usb1v8)) {
+		ret = PTR_ERR(twl->usb1v8);
+		dev_err(twl->dev, "LATONA USB LDO usb1v8 get error=%d\n", ret);
+		goto err_relock;
+	}
 
 	twl_i2c_write_u8(TWL_MODULE_PM_RECEIVER, 0, VUSB1V8_TYPE);
 
@@ -558,6 +605,11 @@ static int twl4030_usb_ldo_init(struct twl4030_usb *twl)
 			 TWL4030_PM_MASTER_PROTECT_KEY);
 
 	return 0;
+err_relock:
+	/* Error-only cleanup: retain the verified successful write/get order. */
+	twl_i2c_write_u8(TWL_MODULE_PM_MASTER, 0,
+			 TWL4030_PM_MASTER_PROTECT_KEY);
+	return ret;
 }
 
 static ssize_t vbus_show(struct device *dev,
@@ -742,10 +794,8 @@ static int twl4030_usb_probe(struct platform_device *pdev)
 	INIT_DELAYED_WORK(&twl->id_workaround_work, twl4030_id_workaround_work);
 
 	err = twl4030_usb_ldo_init(twl);
-	if (err) {
-		dev_err(&pdev->dev, "ldo init failed\n");
-		return err;
-	}
+	if (err)
+		return dev_err_probe(&pdev->dev, err, "ldo init failed\n");
 	usb_add_phy_dev(&twl->phy);
 
 	platform_set_drvdata(pdev, twl);

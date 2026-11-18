@@ -187,6 +187,14 @@ omap3_do_wfi_sram_addr:
 kernel_flush:
 	.word v7_flush_dcache_all
 
+/* C-callable shallow idle entry; omap3_do_wfi consumes this frame.
+ * Keep the suspend/SRAM entry unchanged: its caller already saved it.
+ */
+ENTRY(omap3_do_wfi_idle)
+	stmfd	sp!, {r4 - r11, lr}
+	b	omap3_do_wfi
+ENDPROC(omap3_do_wfi_idle)
+
 /* ===================================
  * == WFI instruction => Enter idle ==
  * ===================================

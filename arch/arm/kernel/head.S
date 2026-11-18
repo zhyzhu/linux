@@ -89,6 +89,69 @@ kernel_sec_end:
  */
 	.arm
 
+
+/* Temporary Latona diagnostic. Only r3/r6/ip are scratch; no stack.
+ * All call sites precede MMU enable. Require the exact SBL GFX state.
+ */
+#if defined(CONFIG_ARCH_OMAP3) && !defined(CONFIG_THUMB2_KERNEL)
+.macro latona_kernel_checkpoint stage=0
+        .exitm  @ retired Latona colour checkpoint; no pixels or busy wait
+        ldr r3, =0x48050400
+        ldr r6, [r3, #0x40]
+        tst r6, #1
+        beq .Llk_done\@
+        ldr r6, [r3, #0xa0]
+        tst r6, #1
+        beq .Llk_done\@
+        ubfx r6, r6, #1, #4
+        cmp r6, #8
+        bne .Llk_done\@
+        ldr r6, [r3, #0x8c]
+        ldr ip, =0x031f01df
+        cmp r6, ip
+        bne .Llk_done\@
+        ldr r3, [r3, #0x80]
+        ldr ip, =0x9fd80000
+        cmp r3, ip
+        bne .Llk_done\@
+        mvn ip, #0
+.if \stage == 0
+        bic ip, ip, #0xff00
+        bic ip, ip, #0xff0000  @ blue
+.elseif \stage == 1
+        bic ip, ip, #0xff00    @ magenta
+.elseif \stage == 2
+        bic ip, ip, #0xff0000  @ cyan
+.elseif \stage == 3
+        bic ip, ip, #0xff
+        bic ip, ip, #0x7f00    @ orange
+.elseif \stage == 4
+        bic ip, ip, #0xff
+        bic ip, ip, #0xff00    @ red
+.else
+        bic ip, ip, #0x7f
+        bic ip, ip, #0x7f00
+        bic ip, ip, #0x7f0000  @ gray
+.endif
+        mov r6, #15360
+.Llk_write\@:
+        str ip, [r3]
+        mcr p15, 0, r3, c7, c10, 1
+        add r3, r3, #4
+        subs r6, r6, #1
+        bne .Llk_write\@
+        dsb sy
+        mov r6, #0x20000000
+.Llk_wait\@:
+        subs r6, r6, #1
+        bne .Llk_wait\@
+.Llk_done\@:
+        b .Llk_pool_end\@
+        .ltorg
+.Llk_pool_end\@:
+.endm
+#endif
+
 	__HEAD
 ENTRY(stext)
  ARM_BE8(setend	be )			@ ensure we are in BE8 mode
@@ -103,12 +166,18 @@ ENTRY(stext)
 #endif
 	@ ensure svc mode and all interrupts masked
 	safe_svcmode_maskall r9
+#if defined(CONFIG_ARCH_OMAP3) && !defined(CONFIG_THUMB2_KERNEL)
+	latona_kernel_checkpoint 0
+#endif
 
 	mrc	p15, 0, r9, c0, c0		@ get processor id
 	bl	__lookup_processor_type		@ r5=procinfo r9=cpuid
 	movs	r10, r5				@ invalid processor (r5=0)?
  THUMB( it	eq )		@ force fixup-able long branch encoding
 	beq	__error_p			@ yes, error 'p'
+#if defined(CONFIG_ARCH_OMAP3) && !defined(CONFIG_THUMB2_KERNEL)
+	latona_kernel_checkpoint 1
+#endif
 
 #ifdef CONFIG_ARM_LPAE
 	mrc	p15, 0, r3, c0, c1, 4		@ read ID_MMFR0
@@ -137,6 +206,9 @@ ENTRY(stext)
 	bl	__fixup_pv_table
 #endif
 	bl	__create_page_tables
+#if defined(CONFIG_ARCH_OMAP3) && !defined(CONFIG_THUMB2_KERNEL)
+	latona_kernel_checkpoint 2
+#endif
 
 	/*
 	 * The following calls CPU specific code in a position independent
@@ -169,7 +241,11 @@ ENTRY(stext)
 	ldr	r12, [r10, #PROCINFO_INITFUNC]
 	add	r12, r12, r10
 	ret	r12
-1:	b	__enable_mmu
+1:
+#if defined(CONFIG_ARCH_OMAP3) && !defined(CONFIG_THUMB2_KERNEL)
+	latona_kernel_checkpoint 3
+#endif
+	b	__enable_mmu
 ENDPROC(stext)
 	.ltorg
 
@@ -372,6 +448,23 @@ __create_page_tables:
 #endif
 #ifdef CONFIG_ARM_LPAE
 	sub	r4, r4, #0x1000		@ point to the PGD table
+#endif
+#if defined(CONFIG_ARCH_OMAP3) && !defined(CONFIG_ARM_LPAE) && !defined(CONFIG_THUMB2_KERNEL)
+        /* Diagnostic identity sections only, same flags as DEBUG_LL I/O.
+         * DISPC at 0x48050400 and SBL GFX buffer at 0x9fd80000.
+         */
+        ldr r6, [r10, #PROCINFO_IO_MMUFLAGS]
+        orr r6, r6, #PMD_SECT_XN
+        ldr r0, =0x1200      @ (0x48000000 >> 20) * 4
+        add r0, r4, r0
+        ldr r3, =0x48000000
+        orr r3, r3, r6
+        str r3, [r0]
+        ldr r0, =0x27f4      @ (0x9fd00000 >> 20) * 4
+        add r0, r4, r0
+        ldr r3, =0x9fd00000
+        orr r3, r3, r6
+        str r3, [r0]
 #endif
 	ret	lr
 ENDPROC(__create_page_tables)

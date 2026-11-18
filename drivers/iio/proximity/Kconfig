@@ -17,6 +17,12 @@ config AS3935
 	  To compile this driver as a module, choose M here: the
 	  module will be called as3935
 
+config LATONA_GP2A_PROXIMITY
+	tristate "Latona GP2AP002A00F on-demand proximity"
+	depends on I2C
+	help
+	  Board-specific normal-mode reads; default standby, no IRQ policy.
+
 endmenu
 
 menu "Proximity and distance sensors"

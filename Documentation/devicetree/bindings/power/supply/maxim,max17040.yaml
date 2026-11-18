@@ -25,6 +25,12 @@ properties:
       - maxim,max17059
       - maxim,max77836-battery
 
+  maxim,read-only:
+    type: boolean
+    description: |
+      Preserve existing gauge state. Disable reset, compensation and alert
+      configuration writes and expose only voltage, capacity and status.
+
   reg:
     maxItems: 1
 

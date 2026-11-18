@@ -24,3 +24,4 @@ obj-$(CONFIG_VCNL3020)		+= vcnl3020.o
 obj-$(CONFIG_VL53L0X_I2C)	+= vl53l0x-i2c.o
 obj-$(CONFIG_AW96103)		+= aw96103.o
 
+obj-$(CONFIG_LATONA_GP2A_PROXIMITY) += latona-gp2a-proximity.o

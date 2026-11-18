@@ -463,12 +463,16 @@ void __init omap2430_init_early(void)
 #ifdef CONFIG_ARCH_OMAP3
 static void __init omap3_init_early(void)
 {
+	int diag_ret;
 	omap2_set_globals_tap(OMAP343X_CLASS, OMAP2_L4_IO_ADDRESS(0x4830A000));
 	omap2_set_globals_sdrc(OMAP2_L3_IO_ADDRESS(OMAP343X_SDRC_BASE),
 			       OMAP2_L3_IO_ADDRESS(OMAP343X_SMS_BASE));
-	omap2_control_base_init();
+	diag_ret = omap2_control_base_init();
+	pr_info("LATONA control_base_init ret=%d; revision next\n", diag_ret);
 	omap3xxx_check_revision();
+	pr_info("LATONA revision done; features next\n");
 	omap3xxx_check_features();
+	pr_info("LATONA features done; PRCM next\n");
 	omap2_prcm_base_init();
 	omap3xxx_voltagedomains_init();
 	omap3xxx_powerdomains_init();

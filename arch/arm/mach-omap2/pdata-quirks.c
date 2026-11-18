@@ -508,6 +508,7 @@ static struct pdata_init pdata_quirks[] __initdata = {
 	{ "compulab,omap3-sbc-t3530", omap3_sbc_t3530_legacy_init, },
 	{ "compulab,omap3-sbc-t3730", omap3_sbc_t3730_legacy_init, },
 	{ "nokia,omap3-n900", nokia_n900_legacy_init, },
+	{ "samsung,latona", hsmmc2_internal_input_clk, },
 	{ "nokia,omap3-n9", hsmmc2_internal_input_clk, },
 	{ "nokia,omap3-n950", hsmmc2_internal_input_clk, },
 	{ "logicpd,dm3730-torpedo-devkit", omap3_logicpd_torpedo_init, },

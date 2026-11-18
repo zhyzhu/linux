@@ -276,7 +276,9 @@ static int _update_sysc_cache(struct omap_hwmod *oh)
 
 	/* XXX ensure module interface clock is up */
 
+	pr_info("LATONA SYSC read %s base=%px off=%04x flags=%lx\n", oh->name, oh->_mpu_rt_va, oh->class->sysc->sysc_offs, (unsigned long)oh->flags);
 	oh->_sysc_cache = omap_hwmod_read(oh, oh->class->sysc->sysc_offs);
+	pr_info("LATONA SYSC done %s value=%08x\n", oh->name, oh->_sysc_cache);
 
 	if (!(oh->class->sysc->sysc_flags & SYSC_NO_CACHE))
 		oh->_int_flags |= _HWMOD_SYSCONFIG_LOADED;
@@ -2349,6 +2351,8 @@ static int __init _init(struct omap_hwmod *oh, void *data)
 			parse_module_flags(oh, child);
 	}
 
+	if (!strncmp(oh->name, "dss", 3))
+		pr_info("LATONA display hwmod %s flags=%lx DT=%pOF\n", oh->name, (unsigned long)oh->flags, np);
 	oh->_state = _HWMOD_STATE_INITIALIZED;
 
 	return 0;
@@ -2511,6 +2515,8 @@ static int _setup(struct omap_hwmod *oh, void *data)
 	if (oh->_state != _HWMOD_STATE_INITIALIZED)
 		return 0;
 
+	pr_info("LATONA hwmod setup begin %s flags=%lx\n", oh->name, (unsigned long)oh->flags);
+
 	if (oh->parent_hwmod) {
 		int r;
 
@@ -2538,6 +2544,7 @@ static int _setup(struct omap_hwmod *oh, void *data)
 			     oh->parent_hwmod->name, postsetup_state);
 	}
 
+	pr_info("LATONA hwmod setup end %s state=%u\n", oh->name, oh->_state);
 	return 0;
 }
 

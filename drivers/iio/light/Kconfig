@@ -733,4 +733,12 @@ config ZOPT2201
 	  To compile this driver as a module, choose M here: the
 	  module will be called zopt2201.
 
+config LATONA_GP2A_ALS
+	bool "Samsung Latona GP2A analog ambient light observer"
+	depends on OF && GPIOLIB && REGULATOR
+	help
+	  Read the Latona GP2A analog light output through its TWL4030 ADC4.
+	  Uses framework-managed existing 3.1V supply and GPIO28 enable.
+	  Proximity and automatic backlight policy are not implemented.
+
 endmenu

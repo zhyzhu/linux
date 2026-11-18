@@ -1022,6 +1022,16 @@ static void omap_hsmmc_do_irq(struct omap_hsmmc_host *host, int status)
 	data = host->data;
 	dev_vdbg(mmc_dev(host->mmc), "IRQ Status is %x\n", status);
 
+	if ((status & CTO_EN) && host->cmd && host->cmd->opcode == 5 &&
+	    !strcmp(dev_name(host->dev), "480ad000.mmc"))
+		dev_info(host->dev,
+			 "LATONA CMD5 timeout stat=%08x con=%08x pstate=%08x hctl=%08x sysctl=%08x capa=%08x\n",
+			 status, OMAP_HSMMC_READ(host->base, CON),
+			 OMAP_HSMMC_READ(host->base, PSTATE),
+			 OMAP_HSMMC_READ(host->base, HCTL),
+			 OMAP_HSMMC_READ(host->base, SYSCTL),
+			 OMAP_HSMMC_READ(host->base, CAPA));
+
 	if (status & ERR_EN) {
 		omap_hsmmc_dbg_report_irq(host, status);
 

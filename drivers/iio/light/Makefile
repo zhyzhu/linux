@@ -68,3 +68,5 @@ obj-$(CONFIG_VEML6070)		+= veml6070.o
 obj-$(CONFIG_VEML6075)		+= veml6075.o
 obj-$(CONFIG_VL6180)		+= vl6180.o
 obj-$(CONFIG_ZOPT2201)		+= zopt2201.o
+
+obj-$(CONFIG_LATONA_GP2A_ALS) += latona-gp2a-als.o

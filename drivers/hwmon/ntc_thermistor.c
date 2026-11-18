@@ -16,6 +16,9 @@
 #include <linux/fixp-arith.h>
 #include <linux/iio/consumer.h>
 #include <linux/hwmon.h>
+#include <linux/gpio/consumer.h>
+#include <linux/mutex.h>
+#include <linux/delay.h>
 
 enum ntc_thermistor_type {
 	TYPE_B57330V2103,
@@ -340,9 +343,13 @@ struct ntc_data {
 	unsigned int pulldown_ohm;
 	enum { NTC_CONNECTED_POSITIVE, NTC_CONNECTED_GROUND } connect;
 	struct iio_channel *chan;
+	struct device *dev;
+	struct gpio_desc *enable_gpio;
+	struct mutex sample_lock;
+	u32 startup_delay_us;
 };
 
-static int ntc_adc_iio_read(struct ntc_data *data)
+static int ntc_adc_iio_read_value(struct ntc_data *data)
 {
 	struct iio_channel *channel = data->chan;
 	int uv, ret;
@@ -369,6 +376,25 @@ static int ntc_adc_iio_read(struct ntc_data *data)
 	}
 
 	return uv;
+}
+
+/* Optional switched sensor rail; sampling never leaves it enabled. */
+static int ntc_adc_iio_read(struct ntc_data *data)
+{
+	int ret;
+
+	mutex_lock(&data->sample_lock);
+	if (data->enable_gpio) {
+		gpiod_set_value_cansleep(data->enable_gpio, 1);
+		if (data->startup_delay_us)
+			usleep_range(data->startup_delay_us, data->startup_delay_us + 1000);
+	}
+	ret = ntc_adc_iio_read_value(data);
+	if (data->enable_gpio)
+		gpiod_set_value_cansleep(data->enable_gpio, 0);
+	dev_dbg(data->dev, "switched thermistor sample: %d uV\n", ret);
+	mutex_unlock(&data->sample_lock);
+	return ret;
 }
 
 static inline u64 div64_u64_safe(u64 dividend, u64 divisor)
@@ -614,6 +640,15 @@ static int ntc_thermistor_probe(struct platform_device *pdev)
 	data = devm_kzalloc(dev, sizeof(*data), GFP_KERNEL);
 	if (!data)
 		return -ENOMEM;
+
+	data->dev = dev;
+	mutex_init(&data->sample_lock);
+	data->enable_gpio = devm_gpiod_get_optional(dev, "enable", GPIOD_OUT_LOW);
+	if (IS_ERR(data->enable_gpio))
+		return dev_err_probe(dev, PTR_ERR(data->enable_gpio), "failed to get enable GPIO\n");
+	device_property_read_u32(dev, "startup-delay-us", &data->startup_delay_us);
+	if (data->startup_delay_us > 100000)
+		return -EINVAL;
 
 	ret = ntc_thermistor_parse_props(dev, data);
 	if (ret)

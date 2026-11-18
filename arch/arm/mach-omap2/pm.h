@@ -53,6 +53,7 @@ extern void omap34xx_cpu_suspend(int save_state);
 
 /* omap3_do_wfi function pointer and size, for copy to SRAM */
 extern void omap3_do_wfi(void);
+extern void omap3_do_wfi_idle(void);
 extern unsigned int omap3_do_wfi_sz;
 /* ... and its pointer from SRAM after copy */
 extern void (*omap3_do_wfi_sram)(void);

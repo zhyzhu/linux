@@ -15,6 +15,7 @@
 #include <linux/io.h>
 #include <linux/irq.h>
 #include <linux/of_irq.h>
+#include <linux/of.h>
 
 #include "soc.h"
 #include "common.h"
@@ -137,6 +138,15 @@ u32 omap3_prm_vcvp_rmw(u32 mask, u32 bits, u8 offset)
  */
 static void omap3xxx_prm_dpll3_reset(void)
 {
+	/* Latona SBL consumes Samsung scratch flags across global warm reset.
+	 * Match the vendor CONFIG_MACH_OMAP_LATONA path in prcm.c.
+	 */
+	if (of_machine_is_compatible("samsung,latona")) {
+		omap2_prm_set_mod_reg_bits(OMAP_RST_GS_MASK, OMAP3430_GR_MOD,
+					   OMAP2_RM_RSTCTRL);
+		omap2_prm_read_mod_reg(OMAP3430_GR_MOD, OMAP2_RM_RSTCTRL);
+		return;
+	}
 	omap2_prm_set_mod_reg_bits(OMAP_RST_DPLL3_MASK, OMAP3430_GR_MOD,
 				   OMAP2_RM_RSTCTRL);
 	/* OCP barrier */

@@ -91,3 +91,9 @@ config MMC_CRYPTO
 	  Enabling this makes it possible for the kernel to use the crypto
 	  capabilities of the MMC device (if present) to perform crypto
 	  operations on data being transferred to/from the device.
+
+config PWRSEQ_LATONA_WL127X
+	tristate "Latona WL127x VIO bootstrap sequence"
+	depends on OF && GPIOLIB
+	help
+	  Experimental board-specific pre-power-on pulse; BT remains disabled.

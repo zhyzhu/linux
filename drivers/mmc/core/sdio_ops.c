@@ -22,6 +22,11 @@ int mmc_send_io_op_cond(struct mmc_host *host, u32 ocr, u32 *rocr)
 
 	cmd.opcode = SD_IO_SEND_OP_COND;
 	cmd.arg = ocr;
+	if (!ocr) {
+		cmd.arg = mmc_latona_sdio_query_ocr(host);
+		if (cmd.arg)
+			dev_info(mmc_dev(host), "LATONA diagnostic CMD5 query OCR=%08x\n", cmd.arg);
+	}
 	cmd.flags = MMC_RSP_SPI_R4 | MMC_RSP_R4 | MMC_CMD_BCR;
 
 	for (i = 100; i; i--) {

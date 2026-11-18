@@ -25,6 +25,7 @@
 #include <linux/delay.h>
 #include <linux/ioport.h>
 #include <linux/init.h>
+#include <linux/latona-early-diag.h>
 #include <linux/initrd.h>
 #include <linux/memblock.h>
 #include <linux/acpi.h>
@@ -876,6 +877,7 @@ void start_kernel(void)
 	char *command_line;
 	char *after_dashes;
 
+	latona_early_digit(1);
 	set_task_stack_end_magic(&init_task);
 	smp_setup_processor_id();
 	debug_objects_early_init();
@@ -893,7 +895,9 @@ void start_kernel(void)
 	boot_cpu_init();
 	page_address_init();
 	pr_notice("%s", linux_banner);
+	latona_early_digit(2);
 	setup_arch(&command_line);
+	latona_early_digit(9);
 	/* Static keys and static calls are needed by LSMs */
 	jump_label_init();
 	static_call_init();
@@ -933,6 +937,7 @@ void start_kernel(void)
 	sort_main_extable();
 	trap_init();
 	mm_core_init();
+	latona_early_digit(10);
 	poking_init();
 	ftrace_init();
 
@@ -945,6 +950,7 @@ void start_kernel(void)
 	 * time - but meanwhile we still have a functioning scheduler.
 	 */
 	sched_init();
+	latona_early_digit(11);
 
 	if (WARN(!irqs_disabled(),
 		 "Interrupts were enabled *very* early, fixing it\n"))
@@ -985,6 +991,7 @@ void start_kernel(void)
 	softirq_init();
 	timekeeping_init();
 	time_init();
+	latona_early_digit(12);
 
 	/* This must be after timekeeping is initialized */
 	random_init();
@@ -1009,6 +1016,7 @@ void start_kernel(void)
 	 * this. But we do want output early, in case something goes wrong.
 	 */
 	console_init();
+	latona_early_digit(13);
 	if (panic_later)
 		panic("Too many boot %s vars at `%s'", panic_later,
 		      panic_param);
@@ -1034,10 +1042,16 @@ void start_kernel(void)
 	setup_per_cpu_pageset();
 	numa_policy_init();
 	acpi_early_init();
+	latona_early_digit(20);
+	pr_info("LATONA: late_time_init %ps next\n", late_time_init);
 	if (late_time_init)
 		late_time_init();
+	latona_early_digit(21);
+	pr_info("LATONA: late_time_init returned\n");
 	sched_clock_init();
 	calibrate_delay();
+	latona_early_digit(22);
+	pr_info("LATONA: delay calibrated\n");
 
 	arch_cpu_finalize_init();
 
@@ -1073,6 +1087,8 @@ void start_kernel(void)
 	kcsan_init();
 
 	/* Do the rest non-__init'ed, we're now alive */
+	latona_early_digit(23);
+	pr_info("LATONA: rest_init next\n");
 	rest_init();
 
 	/*
@@ -1520,6 +1536,8 @@ void __init console_on_rootfs(void)
 
 static noinline void __init kernel_init_freeable(void)
 {
+	latona_early_digit(24);
+	pr_info("LATONA: kernel init thread entered\n");
 	/* Now the scheduler is fully set up and can do blocking allocations */
 	gfp_allowed_mask = __GFP_BITS_MASK;
 
@@ -1549,10 +1567,14 @@ static noinline void __init kernel_init_freeable(void)
 	page_alloc_init_late();
 
 	do_basic_setup();
+	latona_early_digit(25);
+	pr_info("LATONA: basic setup initcalls complete\n");
 
 	kunit_run_all_tests();
 
 	wait_for_initramfs();
+	latona_early_digit(26);
+	pr_info("LATONA: initramfs unpack complete\n");
 	console_on_rootfs();
 
 	/*

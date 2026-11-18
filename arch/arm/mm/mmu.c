@@ -8,6 +8,7 @@
 #include <linux/kernel.h>
 #include <linux/errno.h>
 #include <linux/init.h>
+#include <linux/latona-early-diag.h>
 #include <linux/mman.h>
 #include <linux/nodemask.h>
 #include <linux/memblock.h>
@@ -1763,6 +1764,18 @@ static void __init early_fixmap_shutdown(void)
  * paging_init() sets up the page tables, initialises the zone memory
  * maps, and sets up the zero page, bad page and bad page tables.
  */
+#if defined(CONFIG_ARCH_OMAP3) && !defined(CONFIG_ARM_LPAE)
+/* Temporary diagnostic mappings, reserved through the normal static I/O API. */
+static struct map_desc latona_diag_maps[] __initdata = {
+#ifndef CONFIG_DRM_SIMPLEDRM
+        { .virtual = 0xf7000000, .pfn = __phys_to_pfn(0x9fd00000),
+          .length = SZ_2M, .type = MT_DEVICE },
+#endif
+        { .virtual = 0xf7200000, .pfn = __phys_to_pfn(0x48000000),
+          .length = SZ_1M, .type = MT_DEVICE },
+};
+#endif
+
 void __init paging_init(const struct machine_desc *mdesc)
 {
 	void *zero_page;
@@ -1787,6 +1800,10 @@ void __init paging_init(const struct machine_desc *mdesc)
 	dma_contiguous_remap();
 	early_fixmap_shutdown();
 	devicemaps_init(mdesc);
+#if defined(CONFIG_ARCH_OMAP3) && !defined(CONFIG_ARM_LPAE)
+        iotable_init(latona_diag_maps, ARRAY_SIZE(latona_diag_maps));
+        latona_early_digit(7);
+#endif
 	kmap_init();
 	tcm_init();
 

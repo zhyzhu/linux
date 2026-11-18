@@ -158,6 +158,13 @@ u16 omap_ctrl_readw(u16 offset)
 
 u32 omap_ctrl_readl(u16 offset)
 {
+        static bool diag_first = true;
+        if (diag_first) {
+                diag_first = false;
+                pr_emerg("LATONA CTRL first read base=%px offset=%04x\n", omap2_ctrl_base, offset);
+        }
+        if (!omap2_ctrl_base)
+                panic("LATONA: control base NULL, offset=%04x", offset);
 	offset &= 0xfffc;
 
 	return readl_relaxed(omap2_ctrl_base + offset);
@@ -703,11 +710,19 @@ int __init omap2_control_base_init(void)
 	const struct of_device_id *match;
 	struct control_init_data *data;
 	void __iomem *mem;
+	struct resource diag_res;
+	int diag_ret, diag_count = 0;
 
 	for_each_matching_node_and_match(np, omap_scrm_dt_match_table, &match) {
 		data = (struct control_init_data *)match->data;
 
+		diag_count++;
+		diag_ret = of_address_to_resource(np, 0, &diag_res);
+		pr_info("LATONA SCM node=%pOF address_ret=%d index=%d\n", np, diag_ret, data->index);
+		if (!diag_ret)
+				pr_info("LATONA SCM resource=%pR\n", &diag_res);
 		mem = of_iomap(np, 0);
+		pr_info("LATONA SCM map=%px\n", mem);
 		if (!mem) {
 			of_node_put(np);
 			return -ENOMEM;
@@ -721,6 +736,7 @@ int __init omap2_control_base_init(void)
 		data->mem = mem;
 	}
 
+	pr_info("LATONA SCM matches=%d base=%px offset=%d\n", diag_count, omap2_ctrl_base, omap2_ctrl_offset);
 	return 0;
 }
 

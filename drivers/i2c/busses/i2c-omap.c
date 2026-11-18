@@ -754,6 +754,16 @@ static int omap_i2c_xfer_msg(struct i2c_adapter *adap,
 	}
 
 	if (time_left == 0) {
+        /* Latona bring-up: observe only, before reset destroys the evidence. */
+        dev_err(omap->dev,
+                "LATONA timeout stat=%04x con=%04x ie=%04x cnt=%04x buf=%04x systest=%04x err=%04x\n",
+                omap_i2c_read_reg(omap, OMAP_I2C_STAT_REG),
+                omap_i2c_read_reg(omap, OMAP_I2C_CON_REG),
+                omap_i2c_read_reg(omap, OMAP_I2C_IE_REG),
+                omap_i2c_read_reg(omap, OMAP_I2C_CNT_REG),
+                omap_i2c_read_reg(omap, OMAP_I2C_BUFSTAT_REG),
+                omap_i2c_read_reg(omap, OMAP_I2C_SYSTEST_REG),
+                omap->cmd_err);
 		omap_i2c_reset(omap);
 		__omap_i2c_init(omap);
 		return -ETIMEDOUT;

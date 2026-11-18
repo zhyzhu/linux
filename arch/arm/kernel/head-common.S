@@ -75,6 +75,9 @@ ENDPROC(__vet_atags)
  */
 	__INIT
 __mmap_switched:
+#if defined(CONFIG_ARCH_OMAP3) && !defined(CONFIG_THUMB2_KERNEL)
+	latona_kernel_checkpoint 4
+#endif
 
 	mov	r7, r1
 	mov	r8, r2
@@ -116,6 +119,9 @@ __mmap_switched:
 	strne	r10, [r3]			@ Save control register values
 #ifdef CONFIG_KASAN
 	bl	kasan_early_init
+#endif
+#if defined(CONFIG_ARCH_OMAP3) && !defined(CONFIG_THUMB2_KERNEL)
+	latona_kernel_checkpoint 5
 #endif
 	mov	lr, #0
 	b	start_kernel

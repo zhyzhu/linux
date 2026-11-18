@@ -16,6 +16,8 @@
 #include <linux/seq_file.h>
 #include <linux/screen_info.h>
 #include <linux/init.h>
+#define LATONA_DIAG_CONSOLE_IMPL
+#include <linux/latona-early-diag.h>
 #include <linux/kexec.h>
 #include <linux/libfdt.h>
 #include <linux/of.h>
@@ -1103,11 +1105,14 @@ void __init setup_arch(char **cmdline_p)
 {
 	const struct machine_desc *mdesc = NULL;
 	void *atags_vaddr = NULL;
+	struct device_node *latona_np;
+	unsigned int latona_nodes = 0, latona_scm = 0;
 
 	if (__atags_pointer)
 		atags_vaddr = FDT_VIRT_BASE(__atags_pointer);
 
 	setup_processor();
+	latona_early_digit(3);
 	if (atags_vaddr) {
 		mdesc = setup_machine_fdt(atags_vaddr);
 		if (mdesc)
@@ -1125,6 +1130,7 @@ void __init setup_arch(char **cmdline_p)
 		dump_machine_table();
 	}
 
+	latona_early_digit(4);
 	machine_desc = mdesc;
 	machine_name = mdesc->name;
 	dump_stack_set_arch_desc("%s", mdesc->name);
@@ -1140,6 +1146,7 @@ void __init setup_arch(char **cmdline_p)
 
 	early_fixmap_init();
 	early_ioremap_init();
+	latona_early_digit(5);
 
 	parse_early_param();
 
@@ -1160,19 +1167,44 @@ void __init setup_arch(char **cmdline_p)
 
 	early_ioremap_reset();
 
+	latona_early_digit(6);
 	paging_init(mdesc);
+	latona_early_digit(8);
+	latona_fb_console_init();
+	pr_info("LATONA: paging_init returned; resources next\n");
 	kasan_init();
 	request_standard_resources(mdesc);
+	latona_early_digit(14);
+	pr_info("LATONA: resources done\n");
 
 	if (mdesc->restart) {
 		__arm_pm_restart = mdesc->restart;
 		register_restart_handler(&arm_restart_nb);
 	}
 
+        latona_fb_capture_init_early();
+        pr_info("LATONA begin runtime DT audit\n");
 	unflatten_device_tree();
+        for_each_of_allnodes(latona_np) {
+                latona_nodes++;
+                if (of_device_is_compatible(latona_np, "ti,omap3-scm")) {
+                        latona_scm++;
+                        pr_info("LATONA live SCM=%pOF\n", latona_np);
+                }
+                if (latona_nodes >= 4096) {
+                        of_node_put(latona_np);
+                        break;
+                }
+        }
+        pr_info("LATONA live root=%px nodes=%u scm=%u\n", of_root, latona_nodes, latona_scm);
+
+	latona_early_digit(15);
+	pr_info("LATONA: unflatten done\n");
 
 	arm_dt_init_cpu_maps();
 	psci_dt_init();
+	latona_early_digit(16);
+	pr_info("LATONA: CPU maps and PSCI done\n");
 #ifdef CONFIG_SMP
 	if (is_smp()) {
 		if (!mdesc->smp_init || !mdesc->smp_init()) {
@@ -1190,6 +1222,8 @@ void __init setup_arch(char **cmdline_p)
 		hyp_mode_check();
 
 	reserve_crashkernel();
+	latona_early_digit(17);
+	pr_info("LATONA: hyp and crashkernel done\n");
 
 #ifdef CONFIG_VT
 #if defined(CONFIG_VGA_CONSOLE)
@@ -1197,8 +1231,13 @@ void __init setup_arch(char **cmdline_p)
 #endif
 #endif
 
+	latona_early_digit(18);
+	pr_info("LATONA: calling init_early %ps\n", mdesc->init_early);
 	if (mdesc->init_early)
 		mdesc->init_early();
+	latona_early_digit(19);
+	latona_fb_resume_live();
+	pr_info("LATONA: init_early returned\n");
 }
 
 bool arch_cpu_is_hotpluggable(int num)

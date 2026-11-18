@@ -1,0 +1,721 @@
+// SPDX-License-Identifier: GPL-2.0-only
+/* Experimental GT-I9003 bring-up; board wiring from Latona reference sources. */
+/dts-v1/;
+#include "omap36xx.dtsi"
+#include <dt-bindings/interrupt-controller/irq.h>
+#include <dt-bindings/input/input.h>
+
+/ {
+	model = "Samsung Galaxy SL GT-I9003 (Latona bring-up)";
+	compatible = "samsung,latona", "ti,omap3630", "ti,omap3";
+	aliases { display0 = &dss; };
+    vibrator_pwm: vibrator-pwm {
+        compatible = "ti,omap-dmtimer-pwm";
+        #pwm-cells = <3>;
+        ti,timers = <&timer10>;
+        ti,clock-source = <0>; /* Reference OMAP_TIMER_SRC_SYS_CLK, 26MHz. */
+        pinctrl-names = "default";
+        pinctrl-0 = <&latona_vibrator_pwm_pin>;
+    };
+    vibrator {
+        compatible = "pwm-vibrator";
+        pwms = <&vibrator_pwm 0 44615 0>; /* 1160 / 26MHz. */
+        pwm-names = "enable";
+        enable-gpios = <&gpio5 13 GPIO_ACTIVE_HIGH>; /* GPIO141 */
+        pinctrl-names = "default";
+        pinctrl-0 = <&latona_vibrator_enable_pin>;
+        /* No guessed PMIC supply: retain board power, use dummy regulator. */
+    };
+
+	chosen {
+        #address-cells = <1>;
+        #size-cells = <1>;
+        ranges;
+		stdout-path = "serial2:115200n8";
+		linux,initrd-start = <0x82800000>;
+		linux,initrd-end = <0x82b91d0c>;
+        latona_simplefb: framebuffer@9fd80000 {
+            compatible = "simple-framebuffer";
+            reg = <0x9fd80000 0x00177000>;
+            width = <480>;
+            height = <800>;
+            stride = <1920>;
+            format = "x8r8g8b8";
+            status = "disabled";
+            display = <&dss>;
+        };
+
+	};
+    latona_als: light-sensor {
+        #io-channel-cells = <0>;
+        compatible = "samsung,latona-gp2a-als";
+        pinctrl-names = "default";
+        pinctrl-0 = <&latona_als_enable_pin>;
+        io-channels = <&twl_madc 4>;
+        io-channel-names = "alsout";
+        analog-supply = <&vaux1>;
+        vio-supply = <&vaux2>;
+        enable-gpios = <&gpio1 28 GPIO_ACTIVE_HIGH>;
+    };
+    external_power: external-power {
+        compatible = "gpio-charger";
+        charger-type = "unknown";
+        gpios = <&gpio1 29 GPIO_ACTIVE_LOW>;
+    };
+
+    wlan_bootstrap: wlan-bootstrap {
+        compatible = "samsung,latona-wl127x-pwrseq";
+        vsim-test-supply = <&vsim>; /* b73 single-rail diagnostic, routing unconfirmed */
+        bt-shutdown-gpios = <&gpio2 31 GPIO_ACTIVE_HIGH>; /* GPIO63 */
+        wlan-enable-gpios = <&gpio6 0 GPIO_ACTIVE_HIGH>; /* GPIO160 */
+        pinctrl-names = "default";
+        pinctrl-0 = <&latona_bt_shutdown_pin &latona_wlan_enable_pin>;
+    };
+    wlan_vmmc: regulator-wlan {
+        compatible = "regulator-fixed";
+        regulator-name = "vwl1271";
+        regulator-min-microvolt = <1800000>;
+        regulator-max-microvolt = <1800000>;
+        /* Nominal I/O voltage; WLAN_EN is owned exclusively by pwrseq. */
+    };
+
+    battery_thermistor: thermistor-battery {
+        compatible = "murata,ncp15wb473";
+        pinctrl-names = "default";
+        pinctrl-0 = <&latona_temp_enable_pin>;
+        io-channels = <&twl_madc 0>;
+        enable-gpios = <&gpio2 26 GPIO_ACTIVE_HIGH>; /* GPIO58 EN_TEMP_VDD */
+        startup-delay-us = <10000>;
+        pullup-uv = <3000000>;
+        pullup-ohm = <100000>;
+        pulldown-ohm = <100000>;
+    };
+
+    latona_fuel_i2c: i2c-fuel {
+        compatible = "i2c-gpio";
+        #address-cells = <1>;
+        #size-cells = <0>;
+        pinctrl-names = "default";
+        pinctrl-0 = <&latona_fuel_pins>;
+        sda-gpios = <&gpio2 9 (GPIO_ACTIVE_HIGH | GPIO_OPEN_DRAIN)>; /* GPIO41 */
+        scl-gpios = <&gpio2 23 (GPIO_ACTIVE_HIGH | GPIO_OPEN_DRAIN)>; /* GPIO55 */
+        i2c-gpio,delay-us = <10>;
+        i2c-gpio,timeout-ms = <100>;
+        battery@36 {
+            compatible = "maxim,max17040";
+            reg = <0x36>;
+            maxim,read-only;
+        };
+    };
+
+    latona_accel_i2c: i2c-accel {
+        compatible = "i2c-gpio";
+        #address-cells = <1>;
+        #size-cells = <0>;
+        pinctrl-names = "default";
+        pinctrl-0 = <&latona_accel_i2c_pins>;
+        sda-gpios = <&gpio2 6 (GPIO_ACTIVE_HIGH | GPIO_OPEN_DRAIN)>; /* GPIO38 */
+        scl-gpios = <&gpio2 5 (GPIO_ACTIVE_HIGH | GPIO_OPEN_DRAIN)>; /* GPIO37 */
+        i2c-gpio,delay-us = <5>;
+        i2c-gpio,timeout-ms = <100>;
+        accelerometer@8 {
+            compatible = "bosch,bma222";
+            reg = <0x08>;
+        };
+    };
+
+    gpio_keys: gpio-keys {
+        compatible = "gpio-keys";
+        pinctrl-names = "default";
+        pinctrl-0 = <&latona_home_key_pin &latona_power_key_pin &latona_jack_detect_pin>;
+        headphone-detect {
+            label = "Headphone insertion";
+            linux,input-type = <EV_SW>;
+            linux,code = <SW_HEADPHONE_INSERT>;
+            gpios = <&gpio4 16 GPIO_ACTIVE_LOW>; /* GPIO112, vendor invert=1 */
+            debounce-interval = <100>;
+        };
+        home-key {
+            label = "Home";
+            linux,code = <KEY_HOME>;
+            gpios = <&gpio3 1 GPIO_ACTIVE_LOW>; /* GPIO65, idle high */
+            debounce-interval = <20>;
+        };
+        power-key {
+            label = "Power";
+            linux,code = <KEY_POWER>;
+            gpios = <&gpio1 24 GPIO_ACTIVE_HIGH>; /* GPIO24, idle low */
+            debounce-interval = <20>;
+        };
+    };
+
+	/* Conservative window below unverified upper RAM reservations. */
+	memory@80000000 {
+		device_type = "memory";
+		reg = <0x80000000 0x10000000>;
+	};
+	/* Initial hand-off only: preserve the panel's bootloader SPI setup. */
+	latona_panel: panel {
+		status = "disabled";
+		compatible = "samsung,latona-sony-dpi", "panel-dpi";
+		label = "lcd";
+		power-supply = <&vaux4>;
+		width-mm = <52>;
+		height-mm = <86>;
+		panel-timing {
+			clock-frequency = <20571000>;
+			hactive = <480>;
+			vactive = <800>;
+			hfront-porch = <10>;
+			hsync-len = <10>;
+			hback-porch = <10>;
+			vfront-porch = <4>;
+			vsync-len = <2>;
+			vback-porch = <9>;
+			hsync-active = <0>;
+			vsync-active = <0>;
+			de-active = <0>;
+			pixelclk-active = <0>;
+		};
+
+	};
+};
+
+&cpu { cpu0-supply = <&vcc>; };
+
+&omap3_pmx_core {
+    latona_bt_shutdown_pin: latona-bt-shutdown-pin {
+        pinctrl-single,pins = <OMAP3_CORE1_IOPAD(0x20ce, PIN_INPUT_PULLDOWN | MUX_MODE4)>;
+    };
+
+    latona_wlan_enable_pin: latona-wlan-enable-pin {
+        pinctrl-single,pins = <OMAP3_CORE1_IOPAD(0x2194, PIN_INPUT_PULLUP | MUX_MODE4)>;
+    };
+    latona_wlan_irq_pin: latona-wlan-irq-pin {
+        pinctrl-single,pins = <
+            OMAP3_CORE1_IOPAD(0x2116, PIN_INPUT_PULLDOWN | MUX_MODE4) /* CAM_D0 GPIO99 */
+        >;
+    };
+
+    latona_wlan_sdio_cmdclk: latona-wlan-sdio-cmdclk {
+        pinctrl-single,pins = <
+            OMAP3_CORE1_IOPAD(0x21d0, PIN_INPUT_PULLUP | MUX_MODE3)
+            OMAP3_CORE1_IOPAD(0x21d2, PIN_INPUT_PULLUP | MUX_MODE3)
+        >;
+    };
+
+    latona_dpi_default: latona-dpi-default {
+        pinctrl-single,pins = <
+            OMAP3_CORE1_IOPAD(0x20d4, 0x0200 | MUX_MODE0)
+            OMAP3_CORE1_IOPAD(0x20d6, 0x0200 | MUX_MODE0)
+            OMAP3_CORE1_IOPAD(0x20d8, 0x0200 | MUX_MODE0)
+            OMAP3_CORE1_IOPAD(0x20da, 0x0200 | MUX_MODE0)
+            OMAP3_CORE1_IOPAD(0x20dc, 0x1600 | MUX_MODE0)
+            OMAP3_CORE1_IOPAD(0x20de, 0x1600 | MUX_MODE0)
+            OMAP3_CORE1_IOPAD(0x20e0, 0x1600 | MUX_MODE0)
+            OMAP3_CORE1_IOPAD(0x20e2, 0x1600 | MUX_MODE0)
+            OMAP3_CORE1_IOPAD(0x20e4, 0x1600 | MUX_MODE0)
+            OMAP3_CORE1_IOPAD(0x20e6, 0x1600 | MUX_MODE0)
+            OMAP3_CORE1_IOPAD(0x20e8, 0x1600 | MUX_MODE0)
+            OMAP3_CORE1_IOPAD(0x20ea, 0x1600 | MUX_MODE0)
+            OMAP3_CORE1_IOPAD(0x20ec, 0x1600 | MUX_MODE0)
+            OMAP3_CORE1_IOPAD(0x20ee, 0x1600 | MUX_MODE0)
+            OMAP3_CORE1_IOPAD(0x20f0, 0x1600 | MUX_MODE0)
+            OMAP3_CORE1_IOPAD(0x20f2, 0x1600 | MUX_MODE0)
+            OMAP3_CORE1_IOPAD(0x20f4, 0x1600 | MUX_MODE0)
+            OMAP3_CORE1_IOPAD(0x20f6, 0x1600 | MUX_MODE0)
+            OMAP3_CORE1_IOPAD(0x20f8, 0x1600 | MUX_MODE0)
+            OMAP3_CORE1_IOPAD(0x20fa, 0x1600 | MUX_MODE0)
+            OMAP3_CORE1_IOPAD(0x20fc, 0x1600 | MUX_MODE0)
+            OMAP3_CORE1_IOPAD(0x20fe, 0x1600 | MUX_MODE0)
+            OMAP3_CORE1_IOPAD(0x2100, 0x1600 | MUX_MODE0)
+            OMAP3_CORE1_IOPAD(0x2102, 0x1600 | MUX_MODE0)
+            OMAP3_CORE1_IOPAD(0x2104, 0x1600 | MUX_MODE0)
+            OMAP3_CORE1_IOPAD(0x2106, 0x1600 | MUX_MODE0)
+            OMAP3_CORE1_IOPAD(0x2108, 0x1600 | MUX_MODE0)
+            OMAP3_CORE1_IOPAD(0x210a, 0x1600 | MUX_MODE0)
+        >;
+    };
+    latona_dpi_safe: latona-dpi-safe {
+        pinctrl-single,pins = <
+            OMAP3_CORE1_IOPAD(0x20d4, PIN_INPUT_PULLDOWN | MUX_MODE7)
+            OMAP3_CORE1_IOPAD(0x20d6, PIN_INPUT_PULLDOWN | MUX_MODE7)
+            OMAP3_CORE1_IOPAD(0x20d8, PIN_INPUT_PULLDOWN | MUX_MODE7)
+            OMAP3_CORE1_IOPAD(0x20da, PIN_INPUT_PULLDOWN | MUX_MODE7)
+            OMAP3_CORE1_IOPAD(0x20dc, PIN_INPUT_PULLDOWN | MUX_MODE7)
+            OMAP3_CORE1_IOPAD(0x20de, PIN_INPUT_PULLDOWN | MUX_MODE7)
+            OMAP3_CORE1_IOPAD(0x20e0, PIN_INPUT_PULLDOWN | MUX_MODE7)
+            OMAP3_CORE1_IOPAD(0x20e2, PIN_INPUT_PULLDOWN | MUX_MODE7)
+            OMAP3_CORE1_IOPAD(0x20e4, PIN_INPUT_PULLDOWN | MUX_MODE7)
+            OMAP3_CORE1_IOPAD(0x20e6, PIN_INPUT_PULLDOWN | MUX_MODE7)
+            OMAP3_CORE1_IOPAD(0x20e8, PIN_INPUT_PULLDOWN | MUX_MODE7)
+            OMAP3_CORE1_IOPAD(0x20ea, PIN_INPUT_PULLDOWN | MUX_MODE7)
+            OMAP3_CORE1_IOPAD(0x20ec, PIN_INPUT_PULLDOWN | MUX_MODE7)
+            OMAP3_CORE1_IOPAD(0x20ee, PIN_INPUT_PULLDOWN | MUX_MODE7)
+            OMAP3_CORE1_IOPAD(0x20f0, PIN_INPUT_PULLDOWN | MUX_MODE7)
+            OMAP3_CORE1_IOPAD(0x20f2, PIN_INPUT_PULLDOWN | MUX_MODE7)
+            OMAP3_CORE1_IOPAD(0x20f4, PIN_INPUT_PULLDOWN | MUX_MODE7)
+            OMAP3_CORE1_IOPAD(0x20f6, PIN_INPUT_PULLDOWN | MUX_MODE7)
+            OMAP3_CORE1_IOPAD(0x20f8, PIN_INPUT_PULLDOWN | MUX_MODE7)
+            OMAP3_CORE1_IOPAD(0x20fa, PIN_INPUT_PULLDOWN | MUX_MODE7)
+            OMAP3_CORE1_IOPAD(0x20fc, PIN_INPUT_PULLDOWN | MUX_MODE7)
+            OMAP3_CORE1_IOPAD(0x20fe, PIN_INPUT_PULLDOWN | MUX_MODE7)
+            OMAP3_CORE1_IOPAD(0x2100, PIN_INPUT_PULLDOWN | MUX_MODE7)
+            OMAP3_CORE1_IOPAD(0x2102, PIN_INPUT_PULLDOWN | MUX_MODE7)
+            OMAP3_CORE1_IOPAD(0x2104, PIN_INPUT_PULLDOWN | MUX_MODE7)
+            OMAP3_CORE1_IOPAD(0x2106, PIN_INPUT_PULLDOWN | MUX_MODE7)
+            OMAP3_CORE1_IOPAD(0x2108, PIN_INPUT_PULLDOWN | MUX_MODE7)
+            OMAP3_CORE1_IOPAD(0x210a, PIN_INPUT_PULLDOWN | MUX_MODE7)
+        >;
+    };
+
+    latona_panel_spi_default: latona-panel-spi-default {
+        pinctrl-single,pins = <
+            OMAP3_CORE1_IOPAD(0x21c8, PIN_INPUT_PULLDOWN | MUX_MODE0)
+            OMAP3_CORE1_IOPAD(0x21ca, PIN_INPUT_PULLUP | MUX_MODE0)
+            OMAP3_CORE1_IOPAD(0x21cc, PIN_INPUT | MUX_MODE0)
+            OMAP3_CORE1_IOPAD(0x21ce, PIN_INPUT_PULLUP | MUX_MODE0)
+        >;
+    };
+    latona_panel_spi_safe: latona-panel-spi-safe {
+        pinctrl-single,pins = <
+            OMAP3_CORE1_IOPAD(0x21c8, PIN_INPUT_PULLDOWN | MUX_MODE7)
+            OMAP3_CORE1_IOPAD(0x21ca, PIN_INPUT_PULLDOWN | MUX_MODE7)
+            OMAP3_CORE1_IOPAD(0x21cc, PIN_INPUT_PULLDOWN | MUX_MODE7)
+            OMAP3_CORE1_IOPAD(0x21ce, PIN_INPUT_PULLDOWN | MUX_MODE7)
+        >;
+    };
+
+    latona_temp_enable_pin: latona-temp-enable-pin {
+        pinctrl-single,pins = <OMAP3_CORE1_IOPAD(0x20bc, PIN_INPUT_PULLDOWN | MUX_MODE4)>;
+    };
+
+    latona_accel_i2c_pins: latona-accel-i2c-pins {
+        pinctrl-single,pins = <
+            OMAP3_CORE1_IOPAD(0x2080, PIN_INPUT_PULLUP | MUX_MODE4)
+            OMAP3_CORE1_IOPAD(0x2082, PIN_INPUT_PULLUP | MUX_MODE4)
+        >;
+    };
+    latona_fuel_pins: latona-fuel-pins {
+        pinctrl-single,pins = <
+            OMAP3_CORE1_IOPAD(0x2088, PIN_INPUT_PULLUP | MUX_MODE4)
+            OMAP3_CORE1_IOPAD(0x20b6, PIN_INPUT_PULLUP | MUX_MODE4)
+        >;
+    };
+
+    latona_jack_detect_pin: latona-jack-detect-pin {
+        /* CSI2_DX0, GPIO112; vendor input with pulls disabled. */
+        pinctrl-single,pins = <OMAP3_CORE1_IOPAD(0x2134, PIN_INPUT | MUX_MODE4)>;
+    };
+    latona_home_key_pin: latona-home-key-pin {
+        pinctrl-single,pins = <OMAP3_CORE1_IOPAD(0x20d2, PIN_INPUT | MUX_MODE4)>;
+    };
+
+    latona_i2c2_audio_pins: latona-i2c2-audio-pins {
+        pinctrl-single,pins = <
+            OMAP3_CORE1_IOPAD(0x21be, PIN_INPUT_PULLUP | MUX_MODE0)
+            OMAP3_CORE1_IOPAD(0x21c0, PIN_INPUT_PULLUP | MUX_MODE0)
+        >;
+    };
+    latona_amp_enable_pin: latona-amp-enable-pin {
+        pinctrl-single,pins = <OMAP3_CORE1_IOPAD(0x218a, PIN_OUTPUT | MUX_MODE4)>;
+    };
+    latona_i2c3_pins: latona-i2c3-pins {
+        pinctrl-single,pins = <
+            OMAP3_CORE1_IOPAD(0x21c2, PIN_INPUT_PULLUP | MUX_MODE0)
+            OMAP3_CORE1_IOPAD(0x21c4, PIN_INPUT_PULLUP | MUX_MODE0)
+        >;
+    };
+    latona_touch_pins: latona-touch-pins {
+        pinctrl-single,pins = <
+            OMAP3_CORE1_IOPAD(0x2170, PIN_INPUT_PULLUP | MUX_MODE4)
+            OMAP3_CORE1_IOPAD(0x2172, PIN_OUTPUT | MUX_MODE4)
+        >;
+    };
+
+	latona_uart3_pins: latona-uart3-pins {
+		pinctrl-single,pins = <
+			OMAP3_CORE1_IOPAD(0x219e, PIN_INPUT | MUX_MODE0)
+			OMAP3_CORE1_IOPAD(0x21a0, PIN_OUTPUT | MUX_MODE0)
+		>;
+	};
+	latona_i2c1_pins: latona-i2c1-pins {
+		pinctrl-single,pins = <
+			OMAP3_CORE1_IOPAD(0x21ba, PIN_INPUT | MUX_MODE0)
+			OMAP3_CORE1_IOPAD(0x21bc, PIN_INPUT | MUX_MODE0)
+		>;
+	};
+	latona_usb_pins: latona-usb-pins {
+		pinctrl-single,pins = <
+			OMAP3_CORE1_IOPAD(0x21a2, PIN_INPUT | MUX_MODE0)
+			OMAP3_CORE1_IOPAD(0x21a4, PIN_OUTPUT | MUX_MODE0)
+			OMAP3_CORE1_IOPAD(0x21a6, PIN_INPUT | MUX_MODE0)
+			OMAP3_CORE1_IOPAD(0x21a8, PIN_INPUT | MUX_MODE0)
+			OMAP3_CORE1_IOPAD(0x21aa, PIN_INPUT | MUX_MODE0)
+			OMAP3_CORE1_IOPAD(0x21ac, PIN_INPUT | MUX_MODE0)
+			OMAP3_CORE1_IOPAD(0x21ae, PIN_INPUT | MUX_MODE0)
+			OMAP3_CORE1_IOPAD(0x21b0, PIN_INPUT | MUX_MODE0)
+			OMAP3_CORE1_IOPAD(0x21b2, PIN_INPUT | MUX_MODE0)
+			OMAP3_CORE1_IOPAD(0x21b4, PIN_INPUT | MUX_MODE0)
+			OMAP3_CORE1_IOPAD(0x21b6, PIN_INPUT | MUX_MODE0)
+			OMAP3_CORE1_IOPAD(0x21b8, PIN_INPUT | MUX_MODE0)
+		>;
+	};
+	latona_mmc1_pins: latona-mmc1-pins {
+		pinctrl-single,pins = <
+			OMAP3_CORE1_IOPAD(0x2144, PIN_INPUT_PULLUP | MUX_MODE0)
+			OMAP3_CORE1_IOPAD(0x2146, PIN_INPUT_PULLUP | MUX_MODE0)
+			OMAP3_CORE1_IOPAD(0x2148, PIN_INPUT_PULLUP | MUX_MODE0)
+			OMAP3_CORE1_IOPAD(0x214a, PIN_INPUT_PULLUP | MUX_MODE0)
+			OMAP3_CORE1_IOPAD(0x214c, PIN_INPUT_PULLUP | MUX_MODE0)
+			OMAP3_CORE1_IOPAD(0x214e, PIN_INPUT_PULLUP | MUX_MODE0)
+		>;
+	};
+};
+
+&omap3_pmx_core2 {
+    latona_rtc_msecure_pin: latona-rtc-msecure-pin {
+        /* Latona vendor msecure_init: ETK_D8 GPIO22, mode4, high. */
+        pinctrl-single,pins = <OMAP3630_CORE2_IOPAD(0x25ec, PIN_OUTPUT | MUX_MODE4)>;
+    };
+    latona_wlan_sdio_data: latona-wlan-sdio-data {
+        pinctrl-single,pins = <
+            OMAP3630_CORE2_IOPAD(0x25e2, PIN_INPUT_PULLUP | MUX_MODE2)
+            OMAP3630_CORE2_IOPAD(0x25e4, PIN_INPUT_PULLUP | MUX_MODE2)
+            OMAP3630_CORE2_IOPAD(0x25e6, PIN_INPUT_PULLUP | MUX_MODE2)
+            OMAP3630_CORE2_IOPAD(0x25e8, PIN_INPUT_PULLUP | MUX_MODE2)
+        >;
+    };
+
+    latona_charge_observe_pins: latona-charge-observe-pins {
+        pinctrl-single,pins = <
+            OMAP3630_CORE2_IOPAD(0x25e0, PIN_INPUT | MUX_MODE4) /* GPIO16, external pullup */
+            OMAP3630_CORE2_IOPAD(0x25fa, PIN_INPUT_PULLUP | MUX_MODE4) /* GPIO29, wiring unverified */
+        >;
+    };
+
+    latona_power_key_pin: latona-power-key-pin {
+        pinctrl-single,pins = <OMAP3630_CORE2_IOPAD(0x25f0, PIN_INPUT_PULLDOWN | MUX_MODE4)>;
+    };
+
+	latona_mmc1_cd: latona-mmc1-cd-pins {
+		pinctrl-single,pins = <
+			OMAP3630_CORE2_IOPAD(0x25ee, PIN_INPUT_PULLUP | MUX_MODE4)
+		>;
+	};
+    latona_als_enable_pin: latona-als-enable-pin {
+        pinctrl-single,pins = <OMAP3630_CORE2_IOPAD(0x25f8, PIN_OUTPUT | MUX_MODE4)>;
+    };
+	latona_ps_hold: latona-ps-hold-pins {
+		pinctrl-single,pins = <
+			OMAP3630_CORE2_IOPAD(0x25f2, PIN_OUTPUT | MUX_MODE4)
+		>;
+	};
+};
+
+/* Preserve bootloader GPIO state, particularly active-low power hold. */
+&omap3_pmx_core {
+    latona_vibrator_pwm_pin: latona-vibrator-pwm-pin {
+        pinctrl-single,pins = <OMAP3_CORE1_IOPAD(0x20b8, PIN_INPUT_PULLDOWN | MUX_MODE3)>;
+    };
+    latona_vibrator_enable_pin: latona-vibrator-enable-pin {
+        pinctrl-single,pins = <OMAP3_CORE1_IOPAD(0x216e, PIN_OUTPUT | PIN_OFF_OUTPUT_LOW | MUX_MODE4)>;
+    };
+};
+
+&omap3_pmx_core {
+    latona_magnetometer_reset_pin: latona-magnetometer-reset-pin {
+        pinctrl-single,pins = <OMAP3_CORE1_IOPAD(0x219c, PIN_OUTPUT | MUX_MODE4)>;
+    };
+};
+
+&gpio1 {
+	ti,no-reset-on-init;
+	pinctrl-names = "default";
+	pinctrl-0 = <&latona_ps_hold &latona_charge_observe_pins &latona_rtc_msecure_pin>;
+    rtc-msecure-hog {
+        gpio-hog;
+        gpios = <22 GPIO_ACTIVE_HIGH>;
+        output-high;
+        line-name = "latona-rtc-msecure";
+    };
+    charge-status-observe-hog {
+        gpio-hog;
+        gpios = <16 GPIO_ACTIVE_HIGH>;
+        input;
+        line-name = "latona-chg-ing-n-raw";
+    };
+	ps-hold-hog {
+		gpio-hog;
+		gpios = <25 GPIO_ACTIVE_HIGH>;
+		output-low;
+		line-name = "latona-ps-hold";
+	};
+};
+&gpio2 { ti,no-reset-on-init; };
+&gpio3 { ti,no-reset-on-init; };
+&gpio4 { ti,no-reset-on-init; };
+&gpio5 {
+    ti,no-reset-on-init;
+    /* Vendor max97000 probe drives GPIO155 high. No amp register writes. */
+    audio-amp-enable-hog {
+        gpio-hog;
+        gpios = <27 GPIO_ACTIVE_HIGH>;
+        output-high;
+        line-name = "latona-audio-amp-enable";
+    };
+    touch-enable-hog {
+        gpio-hog;
+        gpios = <15 GPIO_ACTIVE_HIGH>; /* GPIO143 TOUCH_EN */
+        output-high;
+        line-name = "latona-touch-enable";
+    };
+};
+&gpio6 {
+	ti,no-reset-on-init;
+
+};
+
+&omap3_pmx_core {
+    latona_bluetooth_uart_pins: latona-bluetooth-uart-pins {
+        pinctrl-single,pins = <
+            OMAP3_CORE1_IOPAD(0x2174, PIN_INPUT | MUX_MODE0)
+            OMAP3_CORE1_IOPAD(0x2176, PIN_OUTPUT | MUX_MODE0)
+            OMAP3_CORE1_IOPAD(0x2178, PIN_OUTPUT | MUX_MODE0)
+            OMAP3_CORE1_IOPAD(0x217a, PIN_INPUT | MUX_MODE0)
+        >;
+    };
+};
+&uart2 {
+    status = "okay";
+    pinctrl-names = "default";
+    pinctrl-0 = <&latona_bluetooth_uart_pins>;
+};
+
+&uart3 {
+	status = "okay";
+	pinctrl-names = "default";
+	pinctrl-0 = <&latona_uart3_pins>;
+};
+
+&i2c1 {
+	status = "okay";
+	clock-frequency = <400000>;
+	pinctrl-names = "default";
+	pinctrl-0 = <&latona_i2c1_pins>;
+	twl: twl@48 {
+		reg = <0x48>;
+		interrupt-parent = <&intc>;
+		interrupts = <7>;
+	};
+};
+
+#include "twl4030.dtsi"
+#include "twl4030_omap3.dtsi"
+
+&charger { status = "disabled"; };
+&twl_keypad {
+    status = "okay";
+    keypad,num-rows = <5>;
+    keypad,num-columns = <6>;
+    linux,keymap = <0x02010073 0x01010072>; /* row2/col1 up, row1/col1 down */
+};
+&vaux1 {
+	regulator-min-microvolt = <3000000>;
+	regulator-max-microvolt = <3000000>;
+};
+&vaux2 {
+	regulator-min-microvolt = <2800000>;
+	regulator-max-microvolt = <2800000>;
+};
+&vaux3 {
+	regulator-min-microvolt = <1800000>;
+	regulator-max-microvolt = <1800000>;
+	regulator-boot-on;
+};
+&vaux4 {
+	regulator-min-microvolt = <2800000>;
+	regulator-max-microvolt = <2800000>;
+	regulator-boot-on;
+};
+&vpll2 { regulator-always-on; };
+
+&usb_otg_hs {
+	status = "okay";
+	pinctrl-names = "default";
+	pinctrl-0 = <&latona_usb_pins>;
+	interface-type = <0>; /* ULPI */
+	mode = <2>; /* MUSB_PERIPHERAL */
+	power = <50>;
+	usb-phy = <&usb2_phy>;
+	phys = <&usb2_phy>;
+	phy-names = "usb2-phy";
+};
+
+/* External slot only; confirmed against stock host and GPIO23 card detect. */
+&mmc1 {
+	status = "okay";
+	pinctrl-names = "default";
+	pinctrl-0 = <&latona_mmc1_pins &latona_mmc1_cd>;
+	vmmc-supply = <&vmmc1>;
+	bus-width = <4>;
+	max-frequency = <24000000>;
+	cd-gpios = <&gpio1 23 GPIO_ACTIVE_LOW>;
+	cd-debounce-delay-ms = <200>;
+	disable-wp;
+	no-1-8-v;
+};
+&mmc2 { status = "disabled"; };
+&mmc3 {
+    status = "okay";
+    pinctrl-names = "default";
+    pinctrl-0 = <&latona_wlan_sdio_cmdclk &latona_wlan_sdio_data>;
+    vmmc-supply = <&wlan_vmmc>;
+    mmc-pwrseq = <&wlan_bootstrap>;
+    bus-width = <4>;
+    max-frequency = <24000000>; /* Stock SDIO clock; init remains 400kHz unless diagnostic override. */
+    non-removable;
+    cap-power-off-card;
+    no-1-8-v;
+    #address-cells = <1>;
+    #size-cells = <0>;
+    wifi@2 {
+        compatible = "ti,wl1273";
+        reg = <2>;
+        pinctrl-names = "default";
+        pinctrl-0 = <&latona_wlan_irq_pin>;
+        interrupt-parent = <&gpio4>;
+        interrupts = <3 IRQ_TYPE_LEVEL_HIGH>; /* GPIO99 */
+        ref-clock-frequency = <38400000>;
+    };
+};
+&gpmc { status = "disabled"; };
+&dss {
+    pinctrl-names = "default", "sleep";
+    pinctrl-0 = <&latona_dpi_default>;
+    pinctrl-1 = <&latona_dpi_safe>;
+	status = "okay";
+	vdds_dsi-supply = <&vpll2>;
+
+	port {
+		latona_dpi_out: endpoint {
+			remote-endpoint = <&latona_panel_in>;
+			data-lines = <24>;
+		};
+	};
+};
+&isp { status = "disabled"; };
+
+/* Keep initialization protections for the three unused display encoders. */
+&dsi { ti,no-reset-on-init; ti,no-idle-on-init; };
+&rfbi { ti,no-reset-on-init; ti,no-idle-on-init; };
+&venc { ti,no-reset-on-init; ti,no-idle-on-init; };
+
+/* This unit aborts on SHAM SYSCONFIG (0x480c3060); omit its hwmod. */
+&sham { status = "disabled"; };
+
+/* AES1 revision read aborts on this unit; defer hardware crypto targets. */
+&aes1_target { status = "disabled"; };
+&aes2_target { status = "disabled"; };
+/* Nonessential for initial shell; upstream marks HS access as conditional. */
+&rng_target { status = "disabled"; };
+
+/* Retain controller NVM configuration; no maxtouch.cfg is supplied. */
+&i2c3 {
+    status = "okay";
+    clock-frequency = <400000>;
+    touchscreen@4a {
+        compatible = "atmel,maxtouch";
+        pinctrl-names = "default";
+        pinctrl-0 = <&latona_i2c3_pins &latona_touch_pins>;
+        reg = <0x4a>;
+        interrupt-parent = <&gpio5>;
+        interrupts = <14 IRQ_TYPE_EDGE_FALLING>; /* GPIO142 */
+        touchscreen-swapped-x-y;
+        linux,keycodes = <KEY_MENU KEY_BACK>;
+    };
+};
+
+/* Observation only: keep charger disabled; do not bind battery temperature yet. */
+&twl_madc {
+    status = "okay";
+    vusb3v1-supply = <&vusb3v1>;
+};
+
+/* Stage 1: controller only; preserve SBL pad state, no panel transactions. */
+&mcspi1 {
+    status = "okay";
+    backlight@0 {
+        compatible = "samsung,latona-sony-backlight";
+        pinctrl-names = "default", "sleep";
+        pinctrl-0 = <&latona_panel_spi_default>;
+        pinctrl-1 = <&latona_panel_spi_safe>;
+        reset-gpios = <&gpio6 10 GPIO_ACTIVE_LOW>;
+        backlight-enable-gpios = <&gpio2 10 GPIO_ACTIVE_HIGH>; /* GPIO42, ASIS only */
+        vddio-supply = <&vaux3>;
+        vci-supply = <&vaux4>;
+        reg = <0>;
+        spi-max-frequency = <375000>;
+        port {
+            latona_panel_in: endpoint {
+                remote-endpoint = <&latona_dpi_out>;
+            };
+        };
+    };
+};
+&mcspi2 { status = "disabled"; };
+&mcspi3 { status = "disabled"; };
+&mcspi4 { status = "disabled"; };
+
+/* Audio probe: reference McBSP2 wiring, no external amplifier GPIO control. */
+/ {
+    sound {
+        pinctrl-names = "default";
+        pinctrl-0 = <&latona_i2c2_audio_pins &latona_amp_enable_pin>;
+        compatible = "ti,omap-twl4030";
+        ti,model = "Latona-TWL4030";
+        ti,mcbsp = <&mcbsp2>;
+    };
+};
+&mcbsp2 {
+    status = "okay";
+    pinctrl-names = "default";
+    pinctrl-0 = <&latona_mcbsp2_pins>;
+};
+&twl {
+    latona_audio: audio {
+        compatible = "ti,twl4030-audio";
+        codec { };
+    };
+};
+&omap3_pmx_core {
+    latona_mcbsp2_pins: latona-mcbsp2-pins {
+        pinctrl-single,pins = <
+            OMAP3_CORE1_IOPAD(0x213c, PIN_INPUT_PULLDOWN | MUX_MODE0)
+            OMAP3_CORE1_IOPAD(0x213e, PIN_INPUT_PULLDOWN | MUX_MODE0)
+            OMAP3_CORE1_IOPAD(0x2140, PIN_INPUT_PULLDOWN | MUX_MODE0)
+            OMAP3_CORE1_IOPAD(0x2142, PIN_OUTPUT | MUX_MODE0)
+        >;
+    };
+};
+
+/* Shared I2C2 bus: audio and fixed-address GP2A proximity client. */
+&i2c2 {
+    status = "okay";
+    clock-frequency = <400000>;
+    magnetometer@2e {
+        compatible = "yamaha,yas529";
+        reg = <0x2e>;
+        reset-gpios = <&gpio6 4 GPIO_ACTIVE_LOW>; /* GPIO164 */
+        pinctrl-names = "default";
+        pinctrl-0 = <&latona_magnetometer_reset_pin>;
+    };
+    proximity@44 {
+        compatible = "samsung,latona-gp2a-proximity";
+        reg = <0x44>;
+        io-channels = <&latona_als>;
+        io-channel-names = "ambient";
+        analog-supply = <&vaux1>;
+        vio-supply = <&vaux2>;
+    };
+};
