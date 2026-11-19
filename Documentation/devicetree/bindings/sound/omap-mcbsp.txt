@@ -34,3 +34,7 @@ mcbsp2: mcbsp@49022000 {
 	ti,buffer-size = <1280>;
 	ti,hwmods = "mcbsp2";
 };
+
+Optional board property:
+- ti,dma-threshold-mode: Select FIFO threshold DMA as the initial mode.
+  Applies to McBSP instances with a FIFO. The default is element mode.

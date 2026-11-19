@@ -679,6 +679,7 @@
 };
 &mcbsp2 {
     status = "okay";
+    ti,dma-threshold-mode;
     pinctrl-names = "default";
     pinctrl-0 = <&latona_mcbsp2_pins>;
 };

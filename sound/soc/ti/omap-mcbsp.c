@@ -692,6 +692,9 @@ static int omap_mcbsp_init(struct platform_device *pdev)
 
 	mcbsp->dma_op_mode = MCBSP_DMA_MODE_ELEMENT;
 	if (mcbsp->pdata->buffer_size) {
+		if (of_property_read_bool(pdev->dev.of_node, "ti,dma-threshold-mode"))
+			mcbsp->dma_op_mode = MCBSP_DMA_MODE_THRESHOLD;
+
 		/*
 		 * Initially configure the maximum thresholds to a safe value.
 		 * The McBSP FIFO usage with these values should not go under
